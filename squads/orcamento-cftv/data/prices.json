@@ -1,0 +1,23 @@
+{
+  "cameras": {
+    "VHD_1120_B": 150.00,
+    "VHD_1220_D": 180.00,
+    "VIP_1230_B": 350.00
+  },
+  "dvrs": {
+    "MHDX_1104": 450.00,
+    "MHDX_1108": 650.00,
+    "MHDX_1116": 1200.00
+  },
+  "acessorios": {
+    "fonte_12v_5a": 45.00,
+    "balun_par": 15.00,
+    "conector_p4_macho": 2.50,
+    "cabo_coaxial_metro": 3.00,
+    "hd_1tb_wd_purple": 450.00
+  },
+  "mao_de_obra": {
+    "instalacao_camera": 120.00,
+    "configuracao_acesso_remoto": 150.00
+  }
+}

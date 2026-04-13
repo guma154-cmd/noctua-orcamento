@@ -1,0 +1,53 @@
+name: "orcamento-cftv"
+version: "1.0.0"
+description: "Squad especializado em automação de orçamentos de sistemas de CFTV, desde a captura via Telegram até a geração final e armazenamento em memória."
+author: "AIOS Operator"
+license: MIT
+slashPrefix: "oc"
+
+aios:
+  minVersion: "3.0.0"
+  type: squad
+
+# ─── COMPONENTS ───
+
+components:
+  agents:
+    - "oc-intake.md"
+    - "oc-qualificacao.md"
+    - "oc-orcamento.md"
+    - "oc-memoria.md"
+  tasks:
+    - "oc-intake-receber-pedido.md"
+    - "oc-qualificacao-analisar.md"
+    - "oc-orcamento-gerar.md"
+    - "oc-memoria-salvar.md"
+    - "oc-memoria-buscar.md"
+  workflows:
+    - "client-quote.md"
+  checklists: []
+  templates: []
+  tools: []
+  scripts: []
+
+# ─── CONFIG ───
+
+config:
+  extends: none
+  coding-standards: config/coding-standards.md
+  tech-stack: config/tech-stack.md
+
+# ─── DEPENDENCIES ───
+
+dependencies:
+  node: []
+  python: []
+  squads: []
+
+# ─── METADATA ───
+
+tags:
+  - "cftv"
+  - "orcamento"
+  - "automacao"
+  - "telegram"
