@@ -12,7 +12,7 @@ const HEURISTICS = {
 
   // Comandos de Controle (Prioridade Máxima)
   control: {
-    reset: /\b(reiniciar|resetar|limpar|começar de novo|apagar|nova conversa|novo atendimento|novo atendimento)\b/i,
+    reset: /\b(reinicie|reiniciar|resetar|limpar|começar de novo|apagar|nova conversa|novo atendimento|novo atendimento)\b/i,
     finish: /\b(finalizar|encerrar|concluir|terminar|fechar esse orçamento|salvar e sair)\b/i,
     menu: /\b(menu|voltar|opções|inicio|início|oi|olá|ola|oii|bom dia|boa tarde|boa noite)\b/i
   },

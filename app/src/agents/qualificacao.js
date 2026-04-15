@@ -145,15 +145,21 @@ const classifyIncomingMessage = async (text, estado) => {
     if (resolved) return 'answer_pending';
   }
 
-  const systemInstruction = `Você é o Intent Router. Identifique a intenção: client_budget_start, supplier_quote_save, budget_reset, smalltalk.`;
+  const systemInstruction = `Você é o Intent Router da Noctua. Identifique se o usuário quer:
+    - client_budget_start: Iniciar um novo orçamento de cliente.
+    - supplier_quote_save: Salvar cotação de fornecedor.
+    - budget_reset: Resetar, limpar, apagar a conversa, começar do zero, esquecer tudo.
+    - smalltalk: Conversa casual ou saudações.
+    Retorne apenas uma destas palavras chaves.`;
   const result = await askGemini(text, systemInstruction);
+  console.log(`[Intent-Router] Input: "${text}" -> IA Result: "${result}"`);
   
   if (!result) return localResult.intent || 'unknown';
   
   const lower = result.toLowerCase();
   if (lower.includes('fornecedor')) return 'supplier_quote_save';
   if (lower.includes('novo')) return 'client_budget_start';
-  if (lower.includes('reset') || lower.includes('limpar')) return 'budget_reset';
+  if (lower.includes('reset') || lower.includes('limpar') || lower.includes('apagar') || lower.includes('zero') || lower.includes('recomeçar') || lower.includes('reiniciar') || lower.includes('reinicie')) return 'budget_reset';
   return 'smalltalk';
 };
 

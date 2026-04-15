@@ -11,6 +11,10 @@
 node_modules/
 node_modules
 
+# Isolation
+room_DECOUPLED_PENDING_DELETE/
+app/room/
+
 # Build & Logs (AIOX)
 dist/
 build/

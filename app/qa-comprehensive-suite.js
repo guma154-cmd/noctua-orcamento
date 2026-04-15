@@ -84,7 +84,7 @@ async function runAudit() {
   await require("./src/agents/memoria").salvarSessao(chatId, session);
 
   const resName = await dialogueEngine.process(chatId, { text: "Rafael Master" });
-  assert(resName.response.includes("concluído") || resName.status === 'finished', "Deve aceitar texto livre para nome do cliente");
+  assert(resName.response.includes("concluído") || resName.response.includes("sucesso") || resName.status === 'awaiting_model_choice' || resName.status === 'finished', "Deve aceitar texto livre para nome do cliente");
 
   console.log("\n---------------------------------------");
   if (failCount === 0) {

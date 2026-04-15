@@ -1,25 +1,24 @@
 {
   "mcpServers": {
     "nano-banana-pro": {
-      "type": "stdio",
-      "command": "npx",
+      "command": "npx.cmd",
       "args": [
         "-y",
         "@rafarafarafa/nano-banana-pro-mcp"
       ],
       "env": {
-        "GEMINI_API_KEY": "${GEMINI_API_KEY}"
+        "GEMINI_API_KEY": "AIzaSyAC4Lnjivv613zBALIajKS-GQUS5hMO1CU"
       }
     },
     "context7": {
-      "command": "npx",
+      "command": "npx.cmd",
       "args": [
         "-y",
         "@upstash/context7-mcp@latest"
       ]
     },
     "21st-dev": {
-      "command": "npx",
+      "command": "npx.cmd",
       "args": [
         "-y",
         "@21st-dev/magic@latest"

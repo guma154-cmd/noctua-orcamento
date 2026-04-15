@@ -32,7 +32,7 @@ const gerarRelatorioOperacional = (modelo, dados) => {
 
   const subtotalMateriais = modelo === 'B' ? formatarMoeda(financeiro.custoMaterial) : "R$ 0,00";
   const valorFinal = modelo === 'A' ? financeiro.valorModeloA : financeiro.valorModeloB;
-  const ticketMinimo = 450.0;
+  const ticketMinimo = 350.0;
 
   let relatorio = TEMPLATE_RELATORIO_OPERACIONAL
     .replace('{{orcamento_id}}', orcamento_id)
@@ -42,9 +42,9 @@ const gerarRelatorioOperacional = (modelo, dados) => {
     .replace('{{lista_materiais}}', listaItens.join('\n'))
     .replace('{{subtotal_materiais}}', subtotalMateriais)
     .replace('{{mao_obra_instalacao}}', formatarMoeda(financeiro.custoInstalacao))
-    .replace('{{margem_percentual}}', '30%')
+    .replace('{{margem_percentual}}', '30% (Fator 1.3)')
     .replace('{{valor_final}}', formatarMoeda(valorFinal))
-    .replace('{{ticket_minimo_aplicado}}', valorFinal < ticketMinimo ? 'SIM' : 'NÃO (Valor acima do mínimo)');
+    .replace('{{ticket_minimo_aplicado}}', financeiro.isTicketMinimo ? 'SIM (Ajustado para R$ 350,00)' : 'NÃO (Valor acima do piso)');
 
   return relatorio;
 };
@@ -55,19 +55,35 @@ const calcularDadosFinanceiros = (escopo, materiais) => {
   const hd = materiais.find(r => r.produto.toLowerCase().includes('hd')) || { preco_custo: 300 };
   
   const custoMaterial = (camera.preco_custo * escopo.quantidade) + dvr.preco_custo + hd.preco_custo;
-  const custoInstalacao = 150 * escopo.quantidade;
   
-  // Modelo A: Apenas Mão de Obra (com margem de 30%)
-  const valorModeloA = custoInstalacao / 0.7;
+  // Regra RF07: Ticket Mínimo R$ 350,00 como valor final de VENDA (piso absoluto)
+  // O custo base da instalação é 150 por câmera
+  const custoInstalacaoPuro = 150 * escopo.quantidade;
+  const fatorMarkup = 1.3;
+
+  // Cálculo inicial do valor de venda da Mão de Obra
+  let valorModeloA = custoInstalacaoPuro * fatorMarkup;
+  let isTicketMinimo = false;
+
+  // Aplicação do piso absoluto de R$ 350,00 no valor de venda
+  if (valorModeloA < 350) {
+    valorModeloA = 350;
+    isTicketMinimo = true;
+  }
+
+  // O custo operacional 'ajustado' para efeitos de cálculo do Modelo B 
+  // será o valor de venda do Modelo A dividido pelo markup, mantendo a coerência.
+  const custoInstalacaoEfetivo = valorModeloA / fatorMarkup;
   
-  // Modelo B: Material + Mão de Obra (com margem de 30% sobre tudo)
-  const valorModeloB = (custoMaterial + custoInstalacao) / 0.7;
+  // Modelo B: Material + Mão de Obra (ambos com fator 1.3)
+  const valorModeloB = (custoMaterial + custoInstalacaoEfetivo) * fatorMarkup;
 
   return {
     custoMaterial,
-    custoInstalacao,
+    custoInstalacao: custoInstalacaoEfetivo,
     valorModeloA,
     valorModeloB,
+    isTicketMinimo,
     detalhes: {
       camera,
       dvr,
@@ -101,7 +117,7 @@ const renderizarProposta = (modelo, dados) => {
 
 const calcularOrcamento = async (escopo, orcamento_id) => {
   return new Promise((resolve, reject) => {
-    db.all("SELECT * FROM fornecedores", async (err, rows) => {
+    db.all("SELECT * FROM fornecedores_v2", async (err, rows) => {
       if (err) return reject(err);
 
       const financeiro = calcularDadosFinanceiros(escopo, rows);

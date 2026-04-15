@@ -98,13 +98,18 @@ const gerarProximoId = () => {
   });
 };
 
+let lastSequence = 0;
 const gerarProximoIdCotacao = () => {
   return new Promise((resolve, reject) => {
     db.get("SELECT COUNT(*) as total FROM cotacoes", (err, row) => {
       if (err) reject(err);
       else {
-        const next = (row.total + 1).toString().padStart(6, '0');
-        resolve(`COT-${next}`);
+        // Garantir que mesmo se o count vier igual, o ID seja diferente no mesmo tick
+        const count = row.total + 1;
+        const sequence = Math.max(count, lastSequence + 1);
+        lastSequence = sequence;
+        const formatted = sequence.toString().padStart(6, '0');
+        resolve(`COT-${formatted}`);
       }
     });
   });
@@ -148,6 +153,85 @@ const atualizarStatusCotacao = (cotacao_id, novoStatus) => {
   });
 };
 
+const atualizarNomeFornecedorCotacao = (cotacao_id, novoNome) => {
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE cotacoes SET fornecedor_nome = ? WHERE cotacao_id = ?",
+      [novoNome, cotacao_id],
+      function(err) {
+        if (err) reject(err);
+        else resolve(true);
+      }
+    );
+  });
+};
+
+/**
+ * SINCRONIZAR PREÇOS (RF07)
+ * Transfere o preço da cotação confirmada para a tabela mestre de fornecedores.
+ */
+const sincronizarPrecosFornecedor = (cotacao_id) => {
+  return new Promise((resolve, reject) => {
+    db.get("SELECT payload_estruturado FROM cotacoes WHERE cotacao_id = ?", [cotacao_id], async (err, row) => {
+      if (err || !row) return reject(err || new Error("Cotação não encontrada"));
+      
+      let payload;
+      try {
+        payload = JSON.parse(row.payload_estruturado);
+      } catch (e) {
+        return reject(new Error("Erro ao processar dados da cotação"));
+      }
+
+      const itens = payload.itens || [];
+      if (itens.length === 0) return resolve({ atualizados: 0, alertas: [] });
+
+      const alertas = [];
+      let atualizados = 0;
+
+      const syncTasks = itens.map(item => {
+        return new Promise((resTask) => {
+          const preco = item.preco_unitario;
+          const nome = item.descricao_bruta || item.descricao;
+          
+          if (!preco || !nome) return resTask();
+
+          // Busca preço anterior para gerar alerta de variação
+          db.get("SELECT preco_custo FROM fornecedores_v2 WHERE produto = ?", [nome], (err, existing) => {
+            if (existing && existing.preco_custo) {
+              const variacao = ((preco - existing.preco_custo) / existing.preco_custo) * 100;
+              if (Math.abs(variacao) >= 10) {
+                alertas.push({ 
+                  produto: nome, 
+                  de: existing.preco_custo, 
+                  para: preco, 
+                  variacao: `${variacao > 0 ? '+' : ''}${variacao.toFixed(1)}%` 
+                });
+              }
+            }
+
+            db.run(
+              `INSERT INTO fornecedores_v2 (produto, preco_custo, preco_anterior, updated_at)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(produto) DO UPDATE SET
+                 preco_anterior = preco_custo,
+                 preco_custo = excluded.preco_custo,
+                 updated_at = CURRENT_TIMESTAMP`,
+              [nome, preco, existing ? existing.preco_custo : null],
+              function(err) {
+                if (!err) atualizados++;
+                resTask();
+              }
+            );
+          });
+        });
+      });
+
+      await Promise.all(syncTasks);
+      resolve({ atualizados, alertas });
+    });
+  });
+};
+
 module.exports = { 
   registrarCliente, 
   buscarCliente, 
@@ -159,5 +243,8 @@ module.exports = {
   gerarProximoId, 
   gerarProximoIdCotacao, 
   salvarCotacao,
-  atualizarStatusCotacao
+  atualizarStatusCotacao,
+  atualizarNomeFornecedorCotacao,
+  sincronizarPrecosFornecedor
 };
+

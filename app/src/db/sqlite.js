@@ -17,23 +17,6 @@ const initDb = () => {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`);
 
-      // Tabela de Fornecedores (Simulação)
-      db.run(`CREATE TABLE IF NOT EXISTS fornecedores (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        produto TEXT,
-        preco_custo REAL
-      )`, () => {
-        // Inserir alguns produtos de exemplo se a tabela estiver vazia
-        db.get("SELECT COUNT(*) as count FROM fornecedores", (err, row) => {
-          if (row && row.count === 0) {
-            db.run("INSERT INTO fornecedores (produto, preco_custo) VALUES ('Camera 2MP', 150.00)");
-            db.run("INSERT INTO fornecedores (produto, preco_custo) VALUES ('DVR 4 Canais', 300.00)");
-            db.run("INSERT INTO fornecedores (produto, preco_custo) VALUES ('Cabo Coaxial (rolo)', 120.00)");
-            db.run("INSERT INTO fornecedores (produto, preco_custo) VALUES ('Fonte 12V', 45.00)");
-          }
-        });
-      });
-
       // Tabela de Sessões (Estado da Conversa)
       db.run(`CREATE TABLE IF NOT EXISTS sessoes (
         chat_id TEXT PRIMARY KEY,
@@ -58,11 +41,42 @@ const initDb = () => {
         cotacao_id TEXT UNIQUE,
         fornecedor_nome TEXT,
         origem TEXT,
-        payload_bruto TEXT, -- Original Bruto solicitado
-        payload_estruturado TEXT, -- supplier_quote_draft
-        confidence_json TEXT, -- Confiança por item
+        payload_bruto TEXT,
+        payload_estruturado TEXT,
+        confidence_json TEXT,
         status TEXT DEFAULT 'rascunho_pendente',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
+
+      // Tabela de Fornecedores (Catálogo de Preços)
+      // Recriada com UNIQUE(produto) para permitir INSERT OR REPLACE na sincronização
+      db.run(`CREATE TABLE IF NOT EXISTS fornecedores_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        produto TEXT UNIQUE,
+        preco_custo REAL,
+        preco_anterior REAL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`, () => {
+        // Migrar dados da tabela antiga (se existir) para a nova
+        db.run(`INSERT OR IGNORE INTO fornecedores_v2 (produto, preco_custo)
+                SELECT produto, preco_custo FROM fornecedores WHERE produto IS NOT NULL`, () => {
+          // Popular com defaults se ainda vazio
+          db.get("SELECT COUNT(*) as count FROM fornecedores_v2", (err, row) => {
+            if (row && row.count === 0) {
+              db.run("INSERT OR IGNORE INTO fornecedores_v2 (produto, preco_custo) VALUES ('Camera 2MP', 150.00)");
+              db.run("INSERT OR IGNORE INTO fornecedores_v2 (produto, preco_custo) VALUES ('DVR 4 Canais', 300.00)");
+              db.run("INSERT OR IGNORE INTO fornecedores_v2 (produto, preco_custo) VALUES ('Cabo Coaxial (rolo)', 120.00)");
+              db.run("INSERT OR IGNORE INTO fornecedores_v2 (produto, preco_custo) VALUES ('Fonte 12V', 45.00)");
+            }
+          });
+        });
+      });
+
+      // Tabela legada (mantida por compatibilidade, mas não usada para escrita)
+      db.run(`CREATE TABLE IF NOT EXISTS fornecedores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        produto TEXT,
+        preco_custo REAL
       )`, (err) => {
         if (err) reject(err);
         else resolve();

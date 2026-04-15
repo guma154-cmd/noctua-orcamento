@@ -9,7 +9,17 @@ Este arquivo define as instrucoes do projeto para o Codex CLI.
 2. Priorize `CLI First -> Observability Second -> UI Third`
 3. Trabalhe por stories em `docs/stories/`
 4. Nao invente requisitos fora dos artefatos existentes
+5. **Boundary Rule**: O agente `noctua-orcamento` está proibido de ler, referenciar ou operar sobre o diretório `C:\Users\rafae\OneDrive\Documentos\AGENTES_PESSOAIS\noctua-room` ou qualquer resíduo do projeto "Room" no diretório atual.
 <!-- AIOX-MANAGED-END: core -->
+
+<!-- AIOX-MANAGED-START: isolation -->
+## Project Boundaries & Isolation
+
+Este agente (noctua-orcamento) opera sob regime de isolamento estrito:
+- **Escopo**: Focado exclusivamente em processamento de PDFs, orçamentação, extração de dados e orquestração de squads de intake/memória.
+- **Exclusão**: O projeto **noctua-room** (Tactical Interface/RTS) é um projeto independente e isolado.
+- **Proibição**: Não carregar memórias, skills, prompts ou workflows relacionados ao "Room" de forma automática. Qualquer acoplamento futuro exige instrução explícita do operador.
+<!-- AIOX-MANAGED-END: isolation -->
 
 <!-- AIOX-MANAGED-START: quality -->
 ## Quality Gates
@@ -65,12 +75,3 @@ Interprete os atalhos abaixo carregando o arquivo correspondente em `.aiox-core/
 <!-- AIOX-MANAGED-END: shortcuts -->
 
 
----
-
-## Available Skills
-
-| Skill | Path | Description |
-|-------|------|-------------|
-| `aios-god-mode` | `.codex/skills/aios-god-mode/SKILL.md` | The Supreme AIOS Operator — creates, configures, and orchestrates everything in Synkra AIOS. Creates agents, tasks, workflows, squads, templates, checklists, rules, and data files. Operates all 11 agents, 207+ tasks, 15 workflows. Enforces Constitutional governance, story lifecycle, and delegation matrix. Activates when users mention AIOS, agents, stories, epics, workflows, sprints, quality gates, creating components, or any development orchestration task. |
-
-To use a skill, read the SKILL.md file at the path indicated above.

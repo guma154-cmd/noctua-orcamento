@@ -12,27 +12,35 @@ const withTimeout = (promise, ms, operationName) => {
 };
 
 /**
+ * Utilitário de Delay (Backoff)
+ */
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
  * Orquestrador SORIA V2
  */
 class AIOrchestrator {
   constructor() {
-    this.maxAttempts = 2;
+    this.maxAttempts = 6;
+    this.defaultTimeout = 45000; // 45 segundos padrão
   }
 
   async run(type, operation, params) {
-    const correlation_id = crypto.randomUUID();
-    const providers = ELIGIBILITY_MATRIX[type];
+    return this.runWithRotation(ELIGIBILITY_MATRIX[type], operation, params, type);
+  }
 
-    if (!providers) {
-      throw new Error(`Tipo de operação desconhecido: ${type}`);
+  async runSpecificConfig(config, operation, params, type = "SPECIFIC") {
+    return this.runWithRotation([config], operation, params, type);
+  }
+
+  async runWithRotation(providers, operation, params, type) {
+    const correlation_id = crypto.randomUUID();
+
+    if (!providers || providers.length === 0) {
+      throw new Error(`Nenhum provedor disponível para: ${type}`);
     }
 
-    console.log(JSON.stringify({
-      event: "ai_request_started",
-      type,
-      correlation_id,
-      timestamp: new Date().toISOString()
-    }));
+    console.log(`[AI-Orchestrator][${correlation_id}] Início da requisição: ${type}`);
 
     const attempts = [];
     let currentAttempt = 0;
@@ -47,18 +55,10 @@ class AIOrchestrator {
 
       try {
         const result = await withTimeout(
-          operation(provider, params),
-          timeout,
+          operation(provider, config, params),
+          timeout || this.defaultTimeout,
           provider.name
         );
-
-        console.log(JSON.stringify({
-          event: "ai_request_success",
-          provider: provider.name,
-          correlation_id,
-          attempt: currentAttempt,
-          timestamp: new Date().toISOString()
-        }));
 
         return {
           content: result,
@@ -69,60 +69,37 @@ class AIOrchestrator {
         };
 
       } catch (error) {
-        const isJsonError = error.message.includes("JSON") || error.name === "SyntaxError" || error.code === "invalid_json";
-        const errorType = isJsonError ? "invalid_json" : "provider_error";
-        
-        let eventStatus = "ai_fallback_triggered";
-        let finalStatus = "failed_recoverable";
-
-        if (currentAttempt >= this.maxAttempts || !providers[currentAttempt]) {
-          eventStatus = "ai_request_failed";
-          finalStatus = isJsonError ? "blocked_nonrecoverable" : "failed_nonrecoverable";
-        }
-
         const errorMsg = error.response ? `HTTP ${error.response.status}` : error.message;
+        const isRateLimit = errorMsg.includes("429") || error.message.toLowerCase().includes("rate limit");
+        const isJsonError = error.message.includes("JSON") || error.name === "SyntaxError" || error.code === "invalid_json";
         
-        console.warn(JSON.stringify({
-          event: eventStatus,
-          provider: provider.name,
-          correlation_id,
-          error: errorMsg,
-          error_type: errorType,
-          status: finalStatus,
-          attempt: currentAttempt,
-          timestamp: new Date().toISOString()
-        }));
+        console.warn(`[AI-Orchestrator][${correlation_id}] FALHA na tentativa ${currentAttempt} (${provider.name}): ${errorMsg}`);
+        
+        if (isRateLimit) {
+          console.log(`[AI-Orchestrator][${correlation_id}] Rate Limit detectado. Aguardando 2s antes do próximo provedor...`);
+          await sleep(2000); // Backoff simples
+        }
 
         attempts.push({ 
           provider: provider.name, 
           error: errorMsg, 
-          error_type: errorType,
-          status: finalStatus 
+          error_stack: error.stack,
+          status: "failed_recoverable" 
         });
 
         if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-          console.error(JSON.stringify({
-            event: "ai_auth_critical",
-            provider: provider.name,
-            correlation_id,
-            error: "Falha de autenticação",
-            timestamp: new Date().toISOString()
-          }));
+          console.error(`[AI-Orchestrator][${correlation_id}] CRITICAL: Falha de autenticação em ${provider.name}`);
         }
       }
     }
 
-    console.error(JSON.stringify({
-      event: "ai_all_providers_failed",
-      correlation_id,
-      timestamp: new Date().toISOString()
-    }));
+    console.error(`[AI-Orchestrator][${correlation_id}] TODOS os provedores falharam para o tipo: ${type}`);
 
     return { 
       content: null, 
       correlation_id, 
       attempts, 
-      status: attempts[attempts.length - 1]?.status === "blocked_nonrecoverable" ? "blocked_nonrecoverable" : "degraded_mode_triggered" 
+      status: "degraded_mode_triggered" 
     };
   }
 }

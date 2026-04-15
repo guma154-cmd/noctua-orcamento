@@ -5,7 +5,10 @@
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
-    "dev": "node --watch src/bot.js"
+    "dev": "node --watch src/bot.js",
+    "lint": "eslint src/**/*.js",
+    "test": "node --test src/**/*.test.js",
+    "typecheck": "echo 'Skipping typecheck (Pure JS)'"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -13,7 +16,10 @@
     "dotenv": "^16.4.5",
     "form-data": "^4.0.5",
     "groq-sdk": "^1.1.2",
+    "openai": "^6.34.0",
+    "sharp": "^0.34.5",
     "sqlite3": "^5.1.7",
-    "telegraf": "^4.16.3"
+    "telegraf": "^4.16.3",
+    "tesseract.js": "^7.0.0"
   }
 }

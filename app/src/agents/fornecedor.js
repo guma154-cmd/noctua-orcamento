@@ -66,7 +66,7 @@ const gerarSugestoesDeAtualizacao = async (itensCotacao, produtosCanonicos) => {
       const matchData = JSON.parse(jsonMatch[0]);
       
       if (matchData && matchData.produto_canonicoid) {
-        letacao = "nenhuma";
+        let acao = "nenhuma";
         let novoPreco = matchData.produto_canonicoid.preco_custo; // Começa com o preço canônico
 
         const precoCotacao = itemCotacao.preco_total;
@@ -138,4 +138,78 @@ const sugerirAtualizacaoPrecos = async (cotacao_id) => {
   return { sugestoes };
 };
 
-module.exports = { sugerirAtualizacaoPrecos };
+const extrairCotaçãoEstruturada = async (textoBruto, tipoMidia) => {
+  // Se o texto já parece ser um JSON estruturado vindo de um Squad, tentamos o parse direto
+  if (textoBruto && textoBruto.trim().startsWith('{')) {
+    try {
+      const cleaned = textoBruto.replace(/```json|```/g, "").trim();
+      const directParse = JSON.parse(cleaned);
+      // Se já tem fornecedor_nome preenchido, retornamos direto. Se for null/vazio, procedemos com IA para tentar achar.
+      if (directParse.itens && directParse.fornecedor_nome && directParse.fornecedor_nome !== "Pendente") {
+        console.log("[Fornecedor] Texto já estruturado com nome. Ignorando re-extração.");
+        return directParse;
+      }
+    } catch (e) {
+      console.log("[Fornecedor] Falha no parse de JSON prévio. Tentando IA.");
+    }
+  }
+
+  const prompt = `Você é um analisador fiscal especializado em distribuidoras de segurança eletrônica (Intelbras, Hikvision, etc).
+Sua missão é extrair os itens e IDENTIFICAR O FORNECEDOR (quem está vendendo) a partir do texto/OCR.
+
+REGRAS PARA NOME DO FORNECEDOR:
+1. Procure no TOPO do documento (Cabeçalhos).
+2. Procure por termos como "Emitente", "Vendedor", "Distribuidora", "Razão Social".
+3. Se houver um e-mail (ex: vendas@distribuidorax.com.br), use o domínio para sugerir o nome.
+4. Se identificar um logotipo escrito em ASCII ou texto isolado no início, use-o.
+5. Se não encontrar de jeito nenhum, retorne "Não identificado".
+
+Formato de Saída (JSON):
+{
+  "fornecedor_nome": "Nome extraído aqui",
+  "itens": [
+    {
+      "descricao_bruta": "Câmera Bullet...",
+      "quantidade": 1,
+      "preco_unitario": 100.00,
+      "preco_total": 100.00,
+      "confianca_item": 0.9
+    }
+  ],
+  "total_identificado": 100.00,
+  "status_rascunho": "valid",
+  "confianca_global": 0.9
+}
+
+Texto Bruto / Transcrição:
+${textoBruto}`;
+  
+  const response = await askGemini(prompt, "Responda apenas com o objeto JSON final, sem marcações markdown na medida do possível.");
+  if (!response) return null;
+  const jsonMatch = response.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("Erro no Parse JSON da cotação", e);
+      return null;
+    }
+  }
+  return null;
+};
+
+const renderizarRascunhoTelegram = (draftId, extraido) => {
+  let msg = `[${draftId}] 📄 *Rascunho: ${extraido.fornecedor_nome || 'Desconhecido'}*\n\n`;
+  if (extraido.itens) {
+    extraido.itens.forEach((it, i) => {
+      msg += `🔹 ${it.quantidade}x ${it.descricao_bruta}\n    (Un: R$ ${it.preco_unitario} -> R$ ${it.preco_total})\n`;
+    });
+  }
+  msg += `\n💰 Total Lido: R$ ${extraido.total_identificado || 0}\n\n`;
+  if (extraido.bloqueado_para_salvamento) {
+    msg += `⚠️ Atenção: Rascunho inconsistente.\n`;
+  }
+  return msg;
+};
+
+module.exports = { sugerirAtualizacaoPrecos, extrairCotaçãoEstruturada, renderizarRascunhoTelegram };

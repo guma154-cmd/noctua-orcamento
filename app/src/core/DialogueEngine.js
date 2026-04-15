@@ -3,6 +3,7 @@ const orcamento = require('../agents/orcamento');
 const fornecedor = require('../agents/fornecedor');
 const memoria = require('../agents/memoria');
 const { parseLocal } = require('../utils/heuristic-parser');
+const menus = require('../ui/telegram-menu');
 
 /**
  * NOCTUA DIALOGUE ENGINE - SMART FINALIZATION V11
@@ -16,10 +17,57 @@ class DialogueEngine {
     let session = await memoria.buscarSessao(chatId) || { ...qualificacao.DEFAULT_STATE };
     session.meta = session.meta || {};
     
-    const cleanText = (text || "").trim().toLowerCase();
+    // 1. RESOLVER PENDÊNCIAS ATIVAS (Prioridade Máxima)
+    if (session.last_question_family) {
+      // 1.1 Confirmação de Saída
+      if (session.last_question_family === 'CONFIRM_SAVE_BEFORE_EXIT') {
+        return await this.handleSaveConfirmation(chatId, text, session);
+      }
+      
+      // 1.2 Escolha de Modelo (Modelo A / B)
+      if (session.last_question_family === 'MODEL_CHOICE') {
+        return await this.handleModelChoice(chatId, text, session);
+      }
     
-    // 1. HARD COMMANDS (RESET / FINISH) - Prioridade Máxima
-    const isReset = local.is_reset || cleanText.includes('reiniciar') || cleanText.includes('nova conversa') || cleanText.includes('recomeçar');
+      // 1.3 Menu Principal
+      if (session.last_question_family === 'MAIN_MENU') {
+        return await this.handleMainMenuSelection(chatId, text, session);
+      }
+    
+      // 1.4 Revisão de Fornecedor (Fase 2A)
+      if (session.last_question_family === 'SUPPLIER_REVIEW') {
+        return await this.handleSupplierReview(chatId, text, session);
+      }
+    
+      // 1.5 Escolha de Mídia Fornecedor
+      if (session.last_question_family === 'SUPPLIER_INIT') {
+        return await this.handleSupplierInitSelection(chatId, text, session);
+      }
+    
+      // 1.6 Pergunta Técnica (Heurística determinística)
+      const resolved = qualificacao.resolvePendingAnswer(text, session.last_question_family);
+      if (resolved) {
+        const family = session.last_question_family;
+        const field = qualificacao.QUESTION_FAMILIES[family].fields[0];
+        session[field] = resolved;
+        if (!session.answered_families.includes(family)) {
+          session.answered_families.push(family);
+        }
+        session.last_question_family = null;
+        await memoria.salvarSessao(chatId, session);
+        return await this.continueFlow(chatId, "", session, 'answer_pending');
+      }
+    }
+
+    const cleanText = (text || "").trim().toLowerCase();
+
+    // 2. GESTÃO DE INTENÇÃO GLOBAL (IA + Heurística)
+    const intent = await qualificacao.classifyIncomingMessage(text || "", session);
+
+    const isExplicitReset = cleanText === 'reset' || cleanText === 'reiniciar' || cleanText === 'reinicie';
+    const isSemanticReset = intent === 'budget_reset' && !local.numeric_selection; // Evita que números virem reset
+    
+    const isReset = isExplicitReset || isSemanticReset || local.is_reset;
     const isFinish = cleanText.includes('finalizar') || cleanText.includes('terminar') || cleanText.includes('encerrar');
 
     if (isReset || isFinish) {
@@ -32,48 +80,6 @@ class DialogueEngine {
       } else {
         await memoria.limparSessao(chatId);
         return await this.showMainMenu(chatId, { ...qualificacao.DEFAULT_STATE });
-      }
-    }
-
-    // 2. RESOLVER PENDÊNCIAS ATIVAS
-    if (session.last_question_family) {
-      // 2.1 Confirmação de Saída
-      if (session.last_question_family === 'CONFIRM_SAVE_BEFORE_EXIT') {
-        return await this.handleSaveConfirmation(chatId, text, session);
-      }
-      
-      // 2.2 Escolha de Modelo (Modelo A / B)
-      if (session.last_question_family === 'MODEL_CHOICE') {
-        return await this.handleModelChoice(chatId, text, session);
-      }
-
-      // 2.3 Menu Principal
-      if (session.last_question_family === 'MAIN_MENU') {
-        return await this.handleMainMenuSelection(chatId, text, session);
-      }
-
-      // 2.4 Revisão de Fornecedor (Fase 2A)
-      if (session.last_question_family === 'SUPPLIER_REVIEW') {
-        return await this.handleSupplierReview(chatId, text, session);
-      }
-
-      // 2.5 Escolha de Mídia Fornecedor
-      if (session.last_question_family === 'SUPPLIER_INIT') {
-        return await this.handleSupplierInitSelection(chatId, text, session);
-      }
-
-      // 2.6 Pergunta Técnica (Heurística determinística)
-      const resolved = qualificacao.resolvePendingAnswer(text, session.last_question_family);
-      if (resolved) {
-        const family = session.last_question_family;
-        const field = qualificacao.QUESTION_FAMILIES[family].fields[0];
-        session[field] = resolved;
-        if (!session.answered_families.includes(family)) {
-          session.answered_families.push(family);
-        }
-        session.last_question_family = null;
-        await memoria.salvarSessao(chatId, session);
-        return await this.continueFlow(chatId, "", session, 'answer_pending');
       }
     }
 
@@ -121,6 +127,9 @@ class DialogueEngine {
   async processSupplierInput(chatId, text, type, session) {
     console.log(`[DEBUG] OCR Bruto recebido (${type}):\n${text}`);
     
+    // Gerar um NOVO ID para cada entrada (Modo Fila)
+    const currentDraftId = await memoria.gerarProximoIdCotacao();
+
     // 1. Armazenar Original Bruto (Raw Source)
     const raw_source = {
       full_text: text,
@@ -130,33 +139,29 @@ class DialogueEngine {
 
     // 2. Extração Estruturada via IA
     const extraido = await fornecedor.extrairCotaçãoEstruturada(text, type);
-    console.log(`[DEBUG] Extração Estruturada:\n${JSON.stringify(extraido, null, 2)}`);
     
-    if (!extraido) return { response: "Não consegui extrair dados dessa cotação. Pode tentar enviar de outra forma?", status: 'error' };
+    if (!extraido || !extraido.itens) return { 
+      response: `Não consegui extrair dados da cotação [${currentDraftId}]. Pode tentar enviar de outra forma?`, 
+      status: 'error',
+      id: currentDraftId
+    };
 
-    // Enriquecer com campos da Fase 2A
+    console.log(`[DEBUG] Extração Estruturada [${currentDraftId}] - Itens encontrados: ${extraido.itens.length}`);
+
+    // Enriquecer com campos da Fase 2A e garantir campos obrigatórios
     extraido.itens = extraido.itens.map((it, idx) => ({
       ...it,
       id: idx + 1,
-      preco_total: it.preco_total || (it.preco_unitario * it.quantidade),
+      descricao_bruta: it.descricao_bruta || it.descricao || 'Item sem descrição',
+      preco_unitario: it.preco_unitario || 0,
+      quantidade: it.quantidade || 1,
+      preco_total: it.preco_total || (it.preco_unitario * it.quantidade) || 0,
       status_mapeamento: "nao_mapeado"
     }));
 
     // 3. Camada 1 de Persistência: draft_persisted
-    session.supplier_quote_draft = {
-      cotacao_id: session.meta.draft_id,
-      fornecedor_nome: extraido.fornecedor_nome,
-      origem: type,
-      original_bruto: text,
-      itens: extraido.itens,
-      total_calculado: extraido.total_identificado,
-      status_rascunho: extraido.status_rascunho,
-      bloqueado_para_salvamento: extraido.bloqueado_para_salvamento,
-      revisao_obrigatoria: true
-    };
-
     await memoria.salvarCotacao({
-      cotacao_id: session.meta.draft_id,
+      cotacao_id: currentDraftId,
       fornecedor_nome: extraido.fornecedor_nome,
       origem: type,
       payload_bruto: raw_source,
@@ -165,11 +170,15 @@ class DialogueEngine {
       status: extraido.bloqueado_para_salvamento ? 'blocked' : 'draft'
     });
 
-    session.last_question_family = 'SUPPLIER_REVIEW';
-    await memoria.salvarSessao(chatId, session);
+    const menuRevisao = menus.menuRevisaoCotacao(currentDraftId, extraido);
 
-    const menuRascunho = fornecedor.renderizarRascunhoTelegram(session.meta.draft_id, extraido);
-    return { response: menuRascunho, status: 'awaiting_review' };
+    return { 
+      response: menuRevisao.text,
+      keyboard: menuRevisao.keyboard,
+      parse_mode: menuRevisao.parse_mode,
+      status: 'awaiting_review',
+      id: currentDraftId
+    };
   }
 
   async handleSupplierReview(chatId, text, session) {
@@ -212,12 +221,12 @@ class DialogueEngine {
   }
 
   async showMainMenu(chatId, session) {
-    const menu = "O que você quer fazer?\n\n1. Novo orçamento\n2. Continuar orçamento em andamento\n3. Salvar cotação de fornecedor\n4. Consultar orçamento ou cotação\n5. Cancelar / limpar contexto";
     session.last_question_family = 'MAIN_MENU';
     session.active_flow = null;
     session.flow_status = 'awaiting_menu';
     await memoria.salvarSessao(chatId, session);
-    return { response: menu, status: 'awaiting_menu' };
+    const menu = menus.menuPrincipal(session);
+    return { response: menu.text, keyboard: menu.keyboard, parse_mode: menu.parse_mode, status: 'awaiting_menu' };
   }
 
   async handleMainMenuSelection(chatId, text, session) {
@@ -245,9 +254,10 @@ class DialogueEngine {
       session.last_question_family = 'SUPPLIER_INIT';
       const newId = await memoria.gerarProximoIdCotacao();
       session.meta = session.meta || {};
-      session.meta.draft_id = newId; // ID nasce em sessão
+      session.meta.draft_id = newId;
       await memoria.salvarSessao(chatId, session);
-      return { response: "Beleza. Como você quer enviar essa cotação?\n1. Texto\n2. Imagem\n3. PDF\n4. Áudio", status: 'supplier_init' };
+      const menuForn = menus.menuMidiaFornecedor(newId);
+      return { response: menuForn.text, keyboard: menuForn.keyboard, parse_mode: menuForn.parse_mode, status: 'supplier_init' };
     }
 
     if (choice == '5') {
@@ -274,8 +284,11 @@ class DialogueEngine {
     if (decision.action === 'calculate') {
       session.last_question_family = 'MODEL_CHOICE';
       await memoria.salvarSessao(chatId, session);
+      const menuModelo = menus.menuEscolhaModelo(session.meta.draft_id);
       return { 
-        response: `[${session.meta.draft_id}] Dados coletados com sucesso!\n\nQual versão você quer gerar agora?\n1. Modelo A — material fornecido pelo cliente\n2. Modelo B — material fornecido pela NOCTUA\n3. Gerar ambos`, 
+        response: menuModelo.text,
+        keyboard: menuModelo.keyboard,
+        parse_mode: menuModelo.parse_mode,
         status: 'awaiting_model_choice' 
       };
     }

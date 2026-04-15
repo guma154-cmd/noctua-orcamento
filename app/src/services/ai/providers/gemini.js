@@ -1,18 +1,18 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-require("dotenv").config();
+require("dotenv").config({ override: true });
 
 class GeminiProvider {
-  constructor() {
-    this.name = "Gemini";
+  constructor(name, modelName) {
+    this.name = name;
     this.apiKey = process.env.GEMINI_API_KEY;
-    this.modelName = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
+    this.modelName = modelName;
   }
 
-  async execute(prompt, systemInstruction = "") {
+  async execute(prompt, systemInstruction = "", modelOverride = null) {
     if (!this.apiKey) throw new Error("GEMINI_API_KEY não configurada");
 
     const genAI = new GoogleGenerativeAI(this.apiKey);
-    const model = genAI.getGenerativeModel({ model: this.modelName });
+    const model = genAI.getGenerativeModel({ model: modelOverride || this.modelName });
     
     const result = await model.generateContent(
       systemInstruction ? `Instrução: ${systemInstruction}\n\nEntrada: ${prompt}` : prompt
@@ -21,12 +21,12 @@ class GeminiProvider {
     return response.text();
   }
 
-  async processMultimodal(filePath, mimeType, prompt) {
+  async processMultimodal(filePath, mimeType, prompt, modelOverride = null) {
     if (!this.apiKey) throw new Error("GEMINI_API_KEY não configurada");
 
     const fs = require("fs");
     const genAI = new GoogleGenerativeAI(this.apiKey);
-    const model = genAI.getGenerativeModel({ model: this.modelName });
+    const model = genAI.getGenerativeModel({ model: modelOverride || this.modelName });
     const fileData = fs.readFileSync(filePath);
 
     const result = await model.generateContent([
@@ -38,4 +38,7 @@ class GeminiProvider {
   }
 }
 
-module.exports = new GeminiProvider();
+module.exports = {
+  geminiPrimary: new GeminiProvider("Gemini", process.env.GEMINI_MODEL || "gemini-2.5-flash"),
+  geminiFallback: new GeminiProvider("Gemini (Fallback)", process.env.GEMINI_FALLBACK_MODEL || "gemini-2.0-flash")
+};

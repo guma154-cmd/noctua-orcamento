@@ -1,6 +1,6 @@
 const axios = require("axios");
 const fs = require("fs");
-require("dotenv").config();
+require("dotenv").config({ override: true });
 
 class SambaNovaProvider {
   constructor() {
