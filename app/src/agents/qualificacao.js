@@ -15,6 +15,7 @@ const QUESTION_FAMILIES = {
   camera_quantity: {
     label: 'quantidade de câmeras',
     fields: ['camera_quantity'],
+    options: ['4 câmeras', '8 câmeras', '16 câmeras', '32 câmeras', 'Outra quantidade'],
     prompt: "Quantas câmeras seriam?"
   },
   installation_environment: {
@@ -57,14 +58,28 @@ const QUESTION_FAMILIES = {
     fields: ['client_name'],
     prompt: "Qual o nome do cliente para o orçamento?",
     free_text: true
+  },
+  client_address: {
+    label: 'endereço',
+    fields: ['client_address'],
+    prompt: "Qual o endereço de instalação?",
+    free_text: true
+  },
+  client_phone: {
+    label: 'telefone',
+    fields: ['client_phone'],
+    prompt: "Qual o telefone de contato do cliente?",
+    free_text: true
   }
 };
 
-const DEFAULT_STATE = {
+const getDefaultState = () => ({
   operator_name: "Rafael",
   active_flow: null, 
   flow_status: 'idle', // [idle, awaiting_menu, collecting, finished]
   client_name: null,
+  client_address: null,
+  client_phone: null,
   property_type: null,
   camera_quantity: null,
   installation_environment: null,
@@ -77,9 +92,10 @@ const DEFAULT_STATE = {
   meta: {
     draft_id: null,
     last_parse_method: null,
-    ambiguities: []
+    ambiguities: [],
+    retry_count: {}
   }
-};
+});
 
 /**
  * RESOLVER RESPOSTA (DETERMINÍSTICO)
@@ -96,23 +112,49 @@ const resolvePendingAnswer = (text, family) => {
 
   const lowerText = text.toLowerCase().trim();
 
+  // Bloqueio de comandos do menu principal que podem colidir com números
+  const menuCommands = ['1', '2', '3', '4', '5'];
+  
   // 1. Tentar Número Puro
   const numMatch = lowerText.match(/^(\d+)$/);
-  if (numMatch && config.options) {
-    const idx = parseInt(numMatch[1]) - 1;
-    if (config.options[idx]) return config.options[idx];
+  if (numMatch) {
+    const cleanNum = numMatch[1];
+    if (config.options) {
+      const idx = parseInt(cleanNum) - 1;
+      if (config.options[idx]) {
+          const selectedOpt = config.options[idx].toLowerCase();
+          // INTERCEPTAÇÃO: Se escolheu "Outra", mas é um número puro
+          if (selectedOpt.includes('outra')) {
+              if (lowerText.includes('outra')) return 'WAIT_FOR_MANUAL'; // Clique ou texto explícito
+              return cleanNum; // Apenas o número, aceita como valor
+          }
+          return config.options[idx];
+      }
+
+      // Se não corresponde a um índice de opção mas a família permite número direto (ex: quantidade)
+      if (family === 'camera_quantity' || family.includes('quantity') || family.includes('count')) {
+          return cleanNum;
+      }
+    } else {
+      return cleanNum;
+    }
   }
 
   // 2. Tentar Texto Equivalente (Opções)
   if (config.options) {
     const foundOpt = config.options.find(opt => lowerText === opt.toLowerCase());
-    if (foundOpt) return foundOpt;
-    
+    if (foundOpt) {
+        if (foundOpt.toLowerCase().includes('outra')) return 'WAIT_FOR_MANUAL';
+        return foundOpt;
+    }
     // Tentar por prefixo numérico (ex: "1. Casa" -> "1")
     const optMatch = lowerText.match(/^(\d+)\s*[\.\-\)]\s*(.*)$/);
     if (optMatch) {
       const idx = parseInt(optMatch[1]) - 1;
-      if (config.options[idx]) return config.options[idx];
+      if (config.options[idx]) {
+          if (config.options[idx].toLowerCase().includes('outra')) return 'WAIT_FOR_MANUAL';
+          return config.options[idx];
+      }
     }
   }
 
@@ -135,9 +177,10 @@ const resolvePendingAnswer = (text, family) => {
 
 const classifyIncomingMessage = async (text, estado) => {
   const localResult = parseLocal(text);
+  const clean = (text || "").toLowerCase().trim();
   
   // Se for comando de controle, retorna control_command p/ Engine tratar
-  if (localResult.is_reset || localResult.is_greeting) return 'control_command';
+  if (localResult.is_reset || localResult.is_greeting || clean.includes('limpar') || clean.includes('reset')) return 'control_command';
 
   // Se houver pendência, priorizar a resolução da resposta antes de classificar nova intenção
   if (estado.last_question_family) {
@@ -169,7 +212,7 @@ const atualizarEstado = async (texto, estadoAtual) => {
   // 1. Tentar Resolver Resposta Pendente (DETERMINÍSTICO)
   if (estadoAtual.last_question_family) {
     const resolved = resolvePendingAnswer(texto, estadoAtual.last_question_family);
-    if (resolved) {
+    if (resolved && resolved !== 'WAIT_FOR_MANUAL') {
       const field = QUESTION_FAMILIES[estadoAtual.last_question_family].fields[0];
       estadoAtual[field] = resolved;
       if (!estadoAtual.answered_families.includes(estadoAtual.last_question_family)) {
@@ -178,30 +221,84 @@ const atualizarEstado = async (texto, estadoAtual) => {
       estadoAtual.last_question_family = null; // LIMPA PENDÊNCIA
       return estadoAtual;
     }
+    // Se for WAIT_FOR_MANUAL, apenas retorna o estado sem limpar pendência
+    if (resolved === 'WAIT_FOR_MANUAL') return estadoAtual;
   }
 
-  // 2. Tentar IA (Modo Livre)
-  const prompt = `Extraia dados de CFTV: "${texto}". Estado: ${JSON.stringify(estadoAtual)}`;
-  const response = await askGemini(prompt, "Extraia campos JSON.");
+  // 2. Tentar IA (Modo Livre / Extração Transversal)
+  console.log(`[IA-Qualificacao] Analisando: "${texto}" (Pendente: ${estadoAtual.last_question_family || 'Nenhuma'})`);
+
+  const systemPrompt = `Você é o extrator de dados CFTV da Noctua.
+  Extraia APENAS os dados explicitamente presentes no texto. NÃO invente valores.
+  Se um campo não for mencionado, NÃO o inclua no JSON.
+  
+  Campos: property_type (Casa/Apartamento/Comércio/Condomínio/Outro), 
+          camera_quantity (número), 
+          installation_environment (Interno/Externo/Misto), 
+          system_type (IP (Digital)/Analógico (HD)/Ainda não sei), 
+          recording_required (Sim/Não), 
+          remote_view (Sim/Não), 
+          material_source (Cliente fornece/NOCTUA fornece),
+          client_address (endereço),
+          client_phone (telefone).
+          
+  IMPORTANTE: 
+  - Se o usuário falar "digital", "rede", "poe", classifique system_type como "IP (Digital)".
+  - Se o usuário falar "hd", "coaxial", "cvi", "tvi", classifique system_type como "Analógico (HD)".
+  
+  Retorne APENAS o JSON puro.`;
+
+  const response = await askGemini(texto, systemPrompt);
 
   if (response) {
     try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      const dadosIA = JSON.parse(jsonMatch ? jsonMatch[0] : response);
+      // Limpeza de blocos de código markdown se existirem
+      const cleanJson = response.replace(/```json|```/g, "").trim();
+      const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+      const dadosIA = JSON.parse(jsonMatch ? jsonMatch[0] : cleanJson);
+      
+      console.log(`[IA-Qualificacao] Extraído:`, JSON.stringify(dadosIA));
+
+      // Normalização: Garantir que camera_quantity seja número se possível
+      if (dadosIA.camera_quantity !== undefined && dadosIA.camera_quantity !== null) {
+        const parsedNum = parseInt(dadosIA.camera_quantity);
+        if (!isNaN(parsedNum)) dadosIA.camera_quantity = parsedNum;
+      }
+
+      // Merge dos dados
       Object.assign(estadoAtual, dadosIA);
-    } catch (e) {}
+
+      // Limpeza de pendência SE o campo correspondente foi preenchido
+      if (estadoAtual.last_question_family) {
+        const fam = estadoAtual.last_question_family;
+        const config = QUESTION_FAMILIES[fam];
+        if (config && config.fields.every(f => estadoAtual[f] !== null)) {
+          console.log(`[IA-Qualificacao] Pendência resolvida: ${fam}`);
+          estadoAtual.last_question_family = null; 
+        }
+      }
+    } catch (e) {
+      console.error("[IA-Qualificacao-Erro]: Falha ao processar JSON:", response, e.message);
+    }
   }
 
-  // 3. Auto-track famílias respondidas
+  // 3. Sincronizar families respondidas (Garantia de Fluxo)
   Object.keys(QUESTION_FAMILIES).forEach(fam => {
     const fields = QUESTION_FAMILIES[fam].fields;
-    if (fields.some(f => estadoAtual[f] !== undefined && estadoAtual[f] !== null)) {
-      if (!estadoAtual.answered_families.includes(fam)) estadoAtual.answered_families.push(fam);
+    const isCompleted = fields.every(f => estadoAtual[f] !== undefined && estadoAtual[f] !== null);
+    if (isCompleted) {
+      if (!estadoAtual.answered_families.includes(fam)) {
+        estadoAtual.answered_families.push(fam);
+      }
+      // Se a família foi respondida transversalmente, limpa ela da pendência se for a atual
+      if (estadoAtual.last_question_family === fam) {
+        estadoAtual.last_question_family = null;
+      }
     }
   });
 
   return estadoAtual;
-};
+}
 
 const decidirProximaAção = async (estado, intent) => {
   const familias = Object.keys(QUESTION_FAMILIES);
@@ -210,19 +307,21 @@ const decidirProximaAção = async (estado, intent) => {
   const budgetIdPrefix = estado.meta && estado.meta.draft_id ? `[${estado.meta.draft_id}] ` : "";
 
   if (!pendente) {
-    estado.flow_status = 'finished';
-    return { action: 'calculate', text: `${budgetIdPrefix}Maravilha! Orçamento concluído.` };
+    estado.flow_status = 'qualificado';
+    return { action: 'resolve_technical_scope', text: `${budgetIdPrefix}Maravilha! Dados básicos coletados. Vamos para a composição técnica.` };
   }
 
   estado.last_question_family = pendente;
   estado.flow_status = 'collecting';
   const config = QUESTION_FAMILIES[pendente];
   
-  let menu = `${budgetIdPrefix}${config.prompt}\n`;
-  if (config.options) {
-    menu += config.options.map((opt, i) => `${i+1}. ${opt}`).join('\n');
-  }
-  return { action: 'ask_field', text: menu.trim(), family: pendente };
+  let menu = `${budgetIdPrefix}${config.prompt}`;
+  return { 
+    action: 'ask_field', 
+    text: menu.trim(), 
+    family: pendente,
+    options: config.options || null
+  };
 };
 
-module.exports = { atualizarEstado, decidirProximaAção, classifyIncomingMessage, resolvePendingAnswer, DEFAULT_STATE, QUESTION_FAMILIES };
+module.exports = { atualizarEstado, decidirProximaAção, classifyIncomingMessage, resolvePendingAnswer, getDefaultState, QUESTION_FAMILIES };

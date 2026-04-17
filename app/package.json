@@ -13,6 +13,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "axios": "^1.15.0",
+    "csv-parse": "^6.2.1",
     "dotenv": "^16.4.5",
     "form-data": "^4.0.5",
     "groq-sdk": "^1.1.2",
@@ -20,6 +21,7 @@
     "sharp": "^0.34.5",
     "sqlite3": "^5.1.7",
     "telegraf": "^4.16.3",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "xlsx": "^0.18.5"
   }
 }

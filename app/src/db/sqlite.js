@@ -35,6 +35,23 @@ const initDb = () => {
         FOREIGN KEY(cliente_id) REFERENCES clientes(id)
       )`);
 
+      // === GOVERNANÇA DO CATÁLOGO NOCTUA (FASE 3 - ETAPA 1) ===
+      db.run(`CREATE TABLE IF NOT EXISTS catalogo_noctua (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sku TEXT UNIQUE,
+        nome_comercial TEXT,
+        categoria TEXT,
+        subcategoria TEXT,
+        tecnologia TEXT,
+        perfil_noctua TEXT,
+        unidade_compra TEXT DEFAULT 'Unidade',
+        preco_custo REAL,
+        ativo INTEGER DEFAULT 1,
+        item_padrao INTEGER DEFAULT 0,
+        fallback_permitido INTEGER DEFAULT 1,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
+
       // Tabela de Cotações de Fornecedores (Fase 2A)
       db.run(`CREATE TABLE IF NOT EXISTS cotacoes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,9 +94,37 @@ const initDb = () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         produto TEXT,
         preco_custo REAL
-      )`, (err) => {
-        if (err) reject(err);
-        else resolve();
+      )`);
+
+      // === MIGRAÇÕES FASE 1 NOCTUA (ADITIVAS) ===
+      
+      // Colunas para a tabela de Orçamentos
+      const colunasOrcamento = [
+        "status_noctua TEXT",
+        "waiting_human INTEGER DEFAULT 0",
+        "last_interaction_at DATETIME",
+        "metadata_json TEXT"
+      ];
+
+      colunasOrcamento.forEach(col => {
+        db.run(`ALTER TABLE orcamentos ADD COLUMN ${col}`, (err) => {
+          // Ignora erro se a coluna já existir
+          if (err && !err.message.includes("duplicate column name")) {
+            console.warn(`[DB Migration] Aviso na coluna orcamentos.${col.split(' ')[0]}:`, err.message);
+          }
+        });
+      });
+
+      // Vínculo da Sessão com o Orçamento Ativo
+      db.run(`ALTER TABLE sessoes ADD COLUMN current_orcamento_id INTEGER`, (err) => {
+        if (err && !err.message.includes("duplicate column name")) {
+          console.warn(`[DB Migration] Aviso na coluna sessoes.current_orcamento_id:`, err.message);
+        }
+      });
+
+      // Finalização bem-sucedida do Promise
+      db.serialize(() => {
+        resolve();
       });
     });
   });

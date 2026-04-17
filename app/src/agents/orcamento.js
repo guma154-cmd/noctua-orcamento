@@ -1,5 +1,6 @@
 const { db } = require("../db/sqlite");
 const { TEMPLATE_CANONICO_MODELO_A, TEMPLATE_CANONICO_MODELO_B, TEMPLATE_RELATORIO_OPERACIONAL } = require("../templates/propostas");
+const { translate } = require("../utils/operational_messages");
 
 /**
  * MOTOR DE CÁLCULO E RENDERIZAÇÃO NOCTUA
@@ -13,69 +14,131 @@ const gerarRelatorioOperacional = (modelo, dados) => {
   const financeiro = dados.financeiro;
   const escopo = dados.escopo;
   const orcamento_id = dados.orcamento_id;
+  const qtdCameras = escopo.quantidade || escopo.camera_quantity || 0;
+
+  // Tradução de Alertas do Sistema
+  let alertasFormatados = "• Nenhum alerta técnico detectado.";
+  if (escopo.technical_payload && escopo.technical_payload.incompatibilities.length > 0) {
+    const uniqueCodes = [...new Set(escopo.technical_payload.incompatibilities)];
+    alertasFormatados = uniqueCodes.map(code => {
+      const msg = translate(code);
+      return `[${msg.severity}] ${msg.title}\n  > ${msg.message}\n  > Ação: ${msg.recommended_action}`;
+    }).join('\n\n');
+  }
 
   const listaItens = [];
   if (modelo === 'B') {
-    const { camera, dvr, hd } = financeiro.detalhes;
+    const { camera, dvr, hd, acessorios, cabo } = financeiro.detalhes;
+    const infraItems = escopo.technical_payload ? escopo.technical_payload.resolved_items.filter(i => i.categoria === 'Infra') : [];
+
     const itens = [
-      { nome: camera.produto, qtd: escopo.quantidade, custo: camera.preco_custo },
+      { nome: camera.produto, qtd: qtdCameras, custo: camera.preco_custo },
       { nome: dvr.produto, qtd: 1, custo: dvr.preco_custo },
-      { nome: hd.produto, qtd: 1, custo: hd.preco_custo }
+      { nome: hd.produto, qtd: 1, custo: hd.preco_custo },
+      ...(acessorios || []).map(a => ({ nome: a.produto, qtd: a.qtd, custo: a.preco_custo })),
+      ...infraItems.map(i => ({ nome: i.produto, qtd: i.qtd, custo: i.preco_custo }))
     ];
+
+    if (cabo) {
+      itens.push({ nome: cabo.produto, qtd: cabo.qtd, custo: cabo.preco_custo });
+    }
 
     itens.forEach(item => {
       listaItens.push(`• ${item.nome} — ${item.qtd} x ${formatarMoeda(item.custo)} = ${formatarMoeda(item.qtd * item.custo)}`);
     });
+    
+    if (cabo && cabo.qtd_compra > cabo.qtd) {
+      listaItens.push(`_Nota: Arredondar para ${cabo.qtd_compra}m para compra._`);
+    }
+
+    if (escopo.technical_payload && escopo.technical_payload.backbone_meterage > 0) {
+      listaItens.push(`_Nota Técnica: Inclui ${escopo.technical_payload.backbone_meterage}m de cabo para backbone entre switches._`);
+    }
   } else {
     listaItens.push("• (Material fornecido pelo cliente)");
   }
 
   const subtotalMateriais = modelo === 'B' ? formatarMoeda(financeiro.custoMaterial) : "R$ 0,00";
   const valorFinal = modelo === 'A' ? financeiro.valorModeloA : financeiro.valorModeloB;
-  const ticketMinimo = 350.0;
-
+  
   let relatorio = TEMPLATE_RELATORIO_OPERACIONAL
     .replace('{{orcamento_id}}', orcamento_id)
     .replace('{{cliente_nome}}', escopo.nome_cliente || 'Rafael')
+    .replace('{{alertas_sistema}}', alertasFormatados)
     .replace('{{modelo_gerado}}', modelo === 'A' ? 'Modelo A (Mão de Obra)' : 'Modelo B (Material + MDO)')
-    .replace('{{nivel_preco}}', 'Standard')
     .replace('{{lista_materiais}}', listaItens.join('\n'))
     .replace('{{subtotal_materiais}}', subtotalMateriais)
     .replace('{{mao_obra_instalacao}}', formatarMoeda(financeiro.custoInstalacao))
     .replace('{{margem_percentual}}', '30% (Fator 1.3)')
     .replace('{{valor_final}}', formatarMoeda(valorFinal))
-    .replace('{{ticket_minimo_aplicado}}', financeiro.isTicketMinimo ? 'SIM (Ajustado para R$ 350,00)' : 'NÃO (Valor acima do piso)');
+    .replace('{{ticket_minimo_aplicado}}', financeiro.isTicketMinimo ? 'SIM (Ajustado para R$ 350,00)' : 'NÃO');
 
   return relatorio;
 };
 
 const calcularDadosFinanceiros = (escopo, materiais) => {
-  const camera = materiais.find(r => r.produto.toLowerCase().includes('camera')) || { preco_custo: 150 };
-  const dvr = materiais.find(r => r.produto.toLowerCase().includes('dvr')) || { preco_custo: 350 };
-  const hd = materiais.find(r => r.produto.toLowerCase().includes('hd')) || { preco_custo: 300 };
+  let camera, dvr, hd, acessorios = [];
+  const qtdCameras = escopo.quantidade || escopo.camera_quantity || 0;
+
+  if (escopo.technical_payload) {
+    const payload = escopo.technical_payload;
+    camera = payload.resolved_items.find(i => i.categoria === 'Camera') || { preco_custo: 150, produto: 'Camera 2MP' };
+    dvr = payload.resolved_items.find(i => i.categoria === 'Recorder') || { preco_custo: 350, produto: 'DVR 4 Canais' };
+    hd = payload.resolved_items.find(i => i.categoria === 'HD') || { preco_custo: 300, produto: 'HD 1TB' };
+    acessorios = payload.resolved_items.filter(i => i.categoria === 'Acessorio');
+  } else {
+    camera = materiais.find(r => r.produto.toLowerCase().includes('camera')) || { preco_custo: 150, produto: 'Camera 2MP' };
+    dvr = materiais.find(r => r.produto.toLowerCase().includes('dvr')) || { preco_custo: 350, produto: 'DVR 4 Canais' };
+    hd = materiais.find(r => r.produto.toLowerCase().includes('hd')) || { preco_custo: 300, produto: 'HD 1TB' };
+  }
   
-  const custoMaterial = (camera.preco_custo * escopo.quantidade) + dvr.preco_custo + hd.preco_custo;
+  const custoAcessorios = acessorios.reduce((acc, a) => acc + (a.preco_custo * a.qtd), 0);
+  
+  // Regra de Infraestrutura
+  let custoInfra = 0;
+  if (escopo.technical_payload) {
+    const infraItems = escopo.technical_payload.resolved_items.filter(i => i.categoria === 'Infra');
+    custoInfra = infraItems.reduce((acc, i) => acc + (i.preco_custo * i.qtd), 0);
+  }
+
+  // Regra de Cabos Comercial NOCTUA
+  let custoCabo = 0;
+  let caboItem = null;
+  if (escopo.technical_payload && escopo.technical_payload.estimated_cable_total_m > 0) {
+    const payload = escopo.technical_payload;
+    const metragem = payload.estimated_cable_total_m;
+    
+    // O cabo já vem resolvido do TSR com o preço correto (do banco ou fallback)
+    const caboResolvido = payload.resolved_items.find(i => i.categoria === 'Cabo');
+    
+    if (caboResolvido) {
+      const precoMetro = caboResolvido.preco_custo;
+      const metragemCompra = Math.ceil(metragem / 10) * 10;
+      custoCabo = metragem * precoMetro;
+      caboItem = { 
+        ...caboResolvido,
+        qtd: metragem, 
+        qtd_compra: metragemCompra,
+        is_box: metragem > 250
+      };
+    }
+  }
+
+  const custoMaterial = (camera.preco_custo * qtdCameras) + dvr.preco_custo + hd.preco_custo + custoAcessorios + custoCabo + custoInfra;
   
   // Regra RF07: Ticket Mínimo R$ 350,00 como valor final de VENDA (piso absoluto)
-  // O custo base da instalação é 150 por câmera
-  const custoInstalacaoPuro = 150 * escopo.quantidade;
+  const custoInstalacaoPuro = 150 * qtdCameras;
   const fatorMarkup = 1.3;
 
-  // Cálculo inicial do valor de venda da Mão de Obra
   let valorModeloA = custoInstalacaoPuro * fatorMarkup;
   let isTicketMinimo = false;
 
-  // Aplicação do piso absoluto de R$ 350,00 no valor de venda
   if (valorModeloA < 350) {
     valorModeloA = 350;
     isTicketMinimo = true;
   }
 
-  // O custo operacional 'ajustado' para efeitos de cálculo do Modelo B 
-  // será o valor de venda do Modelo A dividido pelo markup, mantendo a coerência.
   const custoInstalacaoEfetivo = valorModeloA / fatorMarkup;
-  
-  // Modelo B: Material + Mão de Obra (ambos com fator 1.3)
   const valorModeloB = (custoMaterial + custoInstalacaoEfetivo) * fatorMarkup;
 
   return {
@@ -87,7 +150,9 @@ const calcularDadosFinanceiros = (escopo, materiais) => {
     detalhes: {
       camera,
       dvr,
-      hd
+      hd,
+      acessorios,
+      cabo: caboItem
     }
   };
 };
@@ -95,6 +160,7 @@ const calcularDadosFinanceiros = (escopo, materiais) => {
 const renderizarProposta = (modelo, dados) => {
   const template = modelo === 'A' ? TEMPLATE_CANONICO_MODELO_A : TEMPLATE_CANONICO_MODELO_B;
   const valor = modelo === 'A' ? formatarMoeda(dados.financeiro.valorModeloA) : formatarMoeda(dados.financeiro.valorModeloB);
+  const { camera, dvr, hd } = dados.financeiro.detalhes;
   
   let texto = template
     .replace('{{cliente_nome}}', dados.escopo.nome_cliente || 'Cliente')
@@ -102,15 +168,15 @@ const renderizarProposta = (modelo, dados) => {
     .replace('{{data_orcamento}}', new Date().toLocaleDateString('pt-BR'))
     .replace('{{orcamento_id}}', dados.orcamento_id)
     .replace('{{quantidade_cameras}}', dados.escopo.quantidade)
-    .replace('{{descricao_cameras}}', '2MP Full HD')
-    .replace('{{quantidade_gravador}}', '1 gravador')
-    .replace('{{descricao_gravador}}', 'Multi-HD 4 canais')
+    .replace('{{descricao_cameras}}', camera.produto)
+    .replace('{{quantidade_gravador}}', '1 unidade')
+    .replace('{{descricao_gravador}}', dvr.produto)
     .replace('{{quantidade_hd}}', '1 unidade')
-    .replace('{{descricao_hd}}', '1TB específico para CFTV')
+    .replace('{{descricao_hd}}', hd.produto)
     .replace('{{valor_modelo_a}}', valor)
     .replace('{{valor_modelo_b}}', valor)
     .replace('{{forma_pagamento}}', 'A combinar (Pix / Cartão)')
-    .replace(/{{linha_extra_.*?}}/g, ''); // Limpa placeholders extras
+    .replace(/{{linha_extra_.*?}}/g, '');
 
   return texto;
 };

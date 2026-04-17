@@ -1,123 +1,100 @@
 /**
- * TEMPLATES CANÔNICOS DE PROPOSTAS - NOCTUA
+ * TEMPLATES CANÔNICOS DE PROPOSTAS - NOCTUA (V2 - PREMIUM BRANDING)
  */
 
-const TEMPLATE_CANONICO_MODELO_A = `🦉 *NOCTUA*
-Soluções em Segurança Eletrônica
+const NOCTUA_HEADER = `🦉 *NOCTUA — Inteligência em Segurança*
+_Soluções Profissionais em CFTV e Controle de Acesso_
+----------------------------------------------`;
 
-CFTV • Porteiro Eletrônico • Alarmes • Controle de Acesso
+const NOCTUA_FOOTER = `----------------------------------------------
+📞 *Contato Direto:* (21) 97421-3199
+📍 Atendimento Técnico Especializado`;
 
-📌 *ORÇAMENTO*
+const TEMPLATE_CANONICO_MODELO_A = `${NOCTUA_HEADER}
 
-Cliente: {{cliente_nome}}
-Local: {{local_instalacao}}
-Data: {{data_orcamento}}
-Validade: 7 dias
-ID do orçamento: {{orcamento_id}}
+🔍 *PROPOSTA TÉCNICA (Mão de Obra)*
+ID: \`{{orcamento_id}}\` | Data: {{data_orcamento}}
 
-✅ *Itens/Serviços:*
+*CLIENTE:* {{cliente_nome}}
+*LOCAL:* {{local_instalacao}}
 
-• Instalação de {{quantidade_cameras}} câmeras {{descricao_cameras}}
-• Instalação de {{quantidade_gravador}} {{descricao_gravador}}
-• Instalação de {{quantidade_hd}} {{descricao_hd}}
-• Configuração básica de gravação e acesso
+✅ *ESCOPO DOS SERVIÇOS:*
+• Instalação técnica de {{quantidade_cameras}} câmeras {{descricao_cameras}}
+• Configuração de {{quantidade_gravador}} {{descricao_gravador}}
+• Montagem de {{quantidade_hd}} {{descricao_hd}}
+• Ajuste de ângulo e detecção de movimento
+• Configuração de acesso remoto via smartphone
 {{linha_extra_itens_servicos}}
 
-🛠️ *Inclui:*
-
-• Mão de obra de instalação dos equipamentos descritos
-• Fixação e posicionamento dos equipamentos
-• Configuração básica do gravador
-• Instalação do HD
-• Testes básicos de funcionamento
-• Configuração inicial de visualização local
+🛠️ *O QUE ESTÁ INCLUÍDO:*
+• Fixação e alinhamento dos equipamentos descritos
+• Terminação de conectores e testes de sinal
+• Treinamento básico de uso do aplicativo
 {{linha_extra_inclui}}
 
-💳 *Condições:*
+💰 *INVESTIMENTO:*
+*VALOR TOTAL:* {{valor_modelo_a}}
+*FORMA:* {{forma_pagamento}}
 
-• Valor total: {{valor_modelo_a}}
-• Forma de pagamento: {{forma_pagamento}}
-• Garantia: serviço de instalação
-
-📌 *Observações:*
-
-• O orçamento refere-se exclusivamente à mão de obra dos itens descritos acima.
-• Todo o material será fornecido pelo cliente.
-• Materiais incompatíveis, defeituosos ou insuficientes não estão cobertos pela garantia do serviço.
-• A NOCTUA pode fornecer o material necessário mediante ajuste no valor do orçamento.
-• Este valor não inclui cabeamento, conectores, eletroduto/conduíte, caixas de passagem, switch adicional, infraestrutura elétrica ou adequações estruturais, salvo menção expressa.
-• O valor considera instalação com acabamento básico. Serviços adicionais não previstos poderão ser orçados à parte.
-• A garantia refere-se à instalação e ao funcionamento no ato da entrega. Danos causados por fatores externos, surtos, oscilação elétrica, umidade, mau uso ou defeito do equipamento não estão cobertos.
+⚠️ *NOTAS IMPORTANTES (Modelo A):*
+1. O cliente é responsável por fornecer **todo o material** (cabos, conectores, fontes e equipamentos).
+2. A garantia NOCTUA cobre exclusivamente o **serviço de instalação**.
+3. Defeitos no hardware fornecido pelo cliente podem gerar custos adicionais de visita técnica.
 {{linha_extra_observacoes}}
 
-📞 *Contato: (21) 97421-3199*`;
+${NOCTUA_FOOTER}`;
 
-const TEMPLATE_CANONICO_MODELO_B = `🦉 *NOCTUA*
-Soluções em Segurança Eletrônica
+const TEMPLATE_CANONICO_MODELO_B = `${NOCTUA_HEADER}
 
-CFTV • Porteiro Eletrônico • Alarmes • Controle de Acesso
+🔍 *SOLUÇÃO COMPLETA (Equipamentos + Instalação)*
+ID: \`{{orcamento_id}}\` | Data: {{data_orcamento}}
 
-📌 *ORÇAMENTO*
+*CLIENTE:* {{cliente_nome}}
+*LOCAL:* {{local_instalacao}}
 
-Cliente: {{cliente_nome}}
-Local: {{local_instalacao}}
-Data: {{data_orcamento}}
-Validade: 7 dias
-ID do orçamento: {{orcamento_id}}
-
-✅ *Itens/Serviços:*
-
-• Fornecimento e instalação de {{quantidade_cameras}} câmeras {{descricao_cameras}}
-• Fornecimento e instalação de {{quantidade_gravador}} {{descricao_gravador}}
-• Fornecimento e instalação de {{quantidade_hd}} {{descricao_hd}}
-• Configuração básica de gravação e acesso
+✅ *PROJETO INTEGRADO:*
+• Fornecimento e Instalação de {{quantidade_cameras}} câmeras {{descricao_cameras}}
+• 01 Gravador Digital {{descricao_gravador}}
+• 01 Armazenamento {{descricao_hd}} (Alta disponibilidade)
+• Toda a infraestrutura lógica e elétrica básica incluída
+• Acesso remoto configurado em múltiplos dispositivos
 {{linha_extra_itens_servicos}}
 
-🛠️ *Inclui:*
-
-• Fornecimento dos equipamentos descritos
-• Instalação e fixação dos equipamentos
-• Configuração básica do gravador
-• Instalação do HD
-• Testes básicos de funcionamento
-• Configuração inicial de visualização local
+💎 *VANTAGENS DO MODELO B:*
+• Garantia Integrada (Hardware + Mão de Obra)
+• Equipamentos homologados pela engenharia NOCTUA
+• Suporte prioritário na configuração de aplicativos
 {{linha_extra_inclui}}
 
-💳 *Condições:*
+💰 *INVESTIMENTO:*
+*VALOR TOTAL:* {{valor_modelo_b}}
+*FORMA:* {{forma_pagamento}}
 
-• Valor total: {{valor_modelo_b}}
-• Forma de pagamento: {{forma_pagamento}}
-• Garantia: serviço de instalação
-
-📌 *Observações:*
-
-• O orçamento contempla material e mão de obra descritos acima.
-• O fornecimento do material pela NOCTUA assegura compatibilidade, qualidade e melhor confiabilidade do sistema instalado.
-• Este valor não inclui cabeamento, conectores, eletroduto/conduíte, caixas de passagem, switch adicional, infraestrutura elétrica ou adequações estruturais, salvo menção expressa.
-• O valor considera instalação com acabamento básico. Serviços adicionais não previstos poderão ser orçados à parte.
-• A garantia refere-se à instalação e ao funcionamento no ato da entrega. Danos causados por fatores externos, surtos, oscilação elétrica, umidade, mau uso ou defeito do equipamento não estão cobertos.
+🔖 *CERTIFICAÇÃO:*
+Esta proposta contempla a solução "chave na mão", garantindo que todos os componentes são 100% compatíveis e otimizados para o seu ambiente.
 {{linha_extra_observacoes}}
 
-📞 *Contato: (21) 97421-3199*`;
+${NOCTUA_FOOTER}`;
 
-const TEMPLATE_RELATORIO_OPERACIONAL = `📊 RELATÓRIO OPERACIONAL — {{orcamento_id}}
-Cliente: {{cliente_nome}}
-Modelo: {{modelo_gerado}}
-Nível: {{nivel_preco}}
+const TEMPLATE_RELATORIO_OPERACIONAL = `📊 *RELATÓRIO OPERACIONAL - NOCTUA INTERNAL*
+ID: \`{{orcamento_id}}\` | Cliente: {{cliente_nome}}
 
-📦 Materiais
+⚠️ *ALERTAS E MENSAGENS:*
+{{alertas_sistema}}
+
+*MÉTRICAS FINANCEIRAS:*
+• Modelo: {{modelo_gerado}}
+• Ticket Mínimo: {{ticket_minimo_aplicado}}
+
+*MATERIAIS:*
 {{lista_materiais}}
-• Subtotal materiais: {{subtotal_materiais}}
+*Total Mat:* {{subtotal_materiais}}
 
-🛠️ Mão de obra
-• Instalação: {{mao_obra_instalacao}}
+*MÃO DE OBRA:*
+• Instalação Base: {{mao_obra_instalacao}}
+• Margem: {{margem_percentual}}
 
-💰 Fechamento
-• Margem aplicada: {{margem_percentual}}
-• Valor final: {{valor_final}}
-
-⚠️ Resumo
-• Ticket mínimo aplicado: {{ticket_minimo_aplicado}}`;
+💰 *VALOR FINAL:* {{valor_final}}`;
 
 module.exports = {
   TEMPLATE_CANONICO_MODELO_A,

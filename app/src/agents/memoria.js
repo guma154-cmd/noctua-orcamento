@@ -26,16 +26,42 @@ const buscarCliente = (telegram_id) => {
   });
 };
 
-const salvarOrcamento = (cliente_id, escopo, valor_final) => {
+const salvarOrcamento = (cliente_id, escopo, valor_final, metadata = {}) => {
   return new Promise((resolve, reject) => {
+    const { status_noctua, waiting_human, metadata_json } = metadata;
     db.run(
-      "INSERT INTO orcamentos (cliente_id, escopo, valor_final) VALUES (?, ?, ?)",
-      [cliente_id, JSON.stringify(escopo), valor_final],
+      `INSERT INTO orcamentos (cliente_id, escopo, valor_final, status_noctua, waiting_human, last_interaction_at, metadata_json) 
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
+      [
+        cliente_id, 
+        JSON.stringify(escopo), 
+        valor_final, 
+        status_noctua || null, 
+        waiting_human || 0, 
+        metadata_json ? JSON.stringify(metadata_json) : null
+      ],
       function(err) {
         if (err) reject(err);
         else resolve(this.lastID);
       }
     );
+  });
+};
+
+const atualizarStatusOrcamento = (orcId, status, waitingHuman = 0, metadata = null) => {
+  return new Promise((resolve, reject) => {
+    const query = metadata 
+      ? "UPDATE orcamentos SET status_noctua = ?, waiting_human = ?, metadata_json = ?, last_interaction_at = CURRENT_TIMESTAMP WHERE id = ?"
+      : "UPDATE orcamentos SET status_noctua = ?, waiting_human = ?, last_interaction_at = CURRENT_TIMESTAMP WHERE id = ?";
+    
+    const params = metadata 
+      ? [status, waitingHuman, JSON.stringify(metadata), orcId]
+      : [status, waitingHuman, orcId];
+
+    db.run(query, params, function(err) {
+      if (err) reject(err);
+      else resolve(true);
+    });
   });
 };
 
@@ -54,9 +80,10 @@ const buscarHistorico = (cliente_id) => {
 
 const salvarSessao = (chat_id, estado) => {
   return new Promise((resolve, reject) => {
+    const currentOrcId = estado.meta ? estado.meta.current_orcamento_id : null;
     db.run(
-      "INSERT OR REPLACE INTO sessoes (chat_id, estado, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
-      [chat_id.toString(), JSON.stringify(estado)],
+      "INSERT OR REPLACE INTO sessoes (chat_id, estado, current_orcamento_id, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+      [chat_id.toString(), JSON.stringify(estado), currentOrcId],
       function(err) {
         if (err) reject(err);
         else resolve(true);
@@ -67,9 +94,18 @@ const salvarSessao = (chat_id, estado) => {
 
 const buscarSessao = (chat_id) => {
   return new Promise((resolve, reject) => {
-    db.get("SELECT estado FROM sessoes WHERE chat_id = ?", [chat_id.toString()], (err, row) => {
+    db.get("SELECT estado, current_orcamento_id FROM sessoes WHERE chat_id = ?", [chat_id.toString()], (err, row) => {
       if (err) reject(err);
-      else resolve(row ? JSON.parse(row.estado) : null);
+      else if (row) {
+        const estado = JSON.parse(row.estado);
+        if (row.current_orcamento_id) {
+          estado.meta = estado.meta || {};
+          estado.meta.current_orcamento_id = row.current_orcamento_id;
+        }
+        resolve(estado);
+      } else {
+        resolve(null);
+      }
     });
   });
 };
@@ -232,10 +268,46 @@ const sincronizarPrecosFornecedor = (cotacao_id) => {
   });
 };
 
+const resolverAlertaOrcamento = (orcId) => {
+  return new Promise((resolve, reject) => {
+    db.run("UPDATE orcamentos SET waiting_human = 0 WHERE id = ?", [orcId], (err) => {
+      if (err) reject(err);
+      else resolve(true);
+    });
+  });
+};
+
+const listarOrcamentosEmAlerta = () => {
+  return new Promise((resolve, reject) => {
+    db.all("SELECT * FROM orcamentos WHERE waiting_human = 1 ORDER BY last_interaction_at DESC", [], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+};
+
+const listarOrcamentosParaFollowUp = (horasInatividade = 24) => {
+  return new Promise((resolve, reject) => {
+    // Para SQLite, usamos datetime('now', '-X hours')
+    const params = [`-${horasInatividade} hours`];
+    db.all(`
+      SELECT * FROM orcamentos 
+      WHERE (status_noctua = 'proposta_enviada' OR status_noctua = 'lead_qualificado' OR status_noctua = 'followup_24h')
+      AND waiting_human = 0 
+      AND datetime(last_interaction_at) <= datetime('now', ?)
+      ORDER BY last_interaction_at ASC
+    `, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+};
+
 module.exports = { 
   registrarCliente, 
   buscarCliente, 
   salvarOrcamento, 
+  atualizarStatusOrcamento,
   buscarHistorico, 
   salvarSessao, 
   buscarSessao, 
@@ -245,6 +317,9 @@ module.exports = {
   salvarCotacao,
   atualizarStatusCotacao,
   atualizarNomeFornecedorCotacao,
-  sincronizarPrecosFornecedor
+  sincronizarPrecosFornecedor,
+  listarOrcamentosEmAlerta,
+  resolverAlertaOrcamento,
+  listarOrcamentosParaFollowUp
 };
 

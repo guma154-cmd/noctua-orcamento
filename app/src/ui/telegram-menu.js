@@ -143,7 +143,7 @@ const menuRevisaoCotacao = (draftId, extraido) => {
 
   const keyboard = Markup.inlineKeyboard([
     [BTN.CONFIRMAR_COT(draftId), BTN.EDITAR_NOME_COT(draftId)],
-    [BTN.CANCELAR_COT(draftId)],
+    [BTN.CANCELAR_COT(draftId), BTN.VOLTAR_MENU],
   ]);
 
   // Nota: parse_mode omitido intencionalmente para evitar falha de Markdown
@@ -159,17 +159,63 @@ const menuEscolhaModelo = (draftId) => {
     `📋 *Orçamento \`${draftId}\` — Pronto!*\n\n` +
     `Qual versão você quer gerar para o cliente?`;
 
-  const keyboard = Markup.inlineKeyboard([LINHAS.modelo]);
+  const keyboard = Markup.inlineKeyboard([
+    LINHAS.modelo,
+    LINHAS.voltar
+  ]);
 
   return { text: header, keyboard, parse_mode: 'Markdown' };
 };
 
-/**
- * Menu de confirmação genérico (salvar rascunho, etc.).
- */
 const menuConfirmacao = (mensagem) => {
-  const keyboard = Markup.inlineKeyboard([LINHAS.confirmacao]);
+  const keyboard = Markup.inlineKeyboard([
+    LINHAS.confirmacao,
+    LINHAS.voltar
+  ]);
   return { text: mensagem, keyboard, parse_mode: 'Markdown' };
+};
+
+/**
+ * Menu dinâmico de opções (Usado no Intake/Qualificação)
+ */
+const menuOpcoes = (header, opcoes) => {
+  const buttons = [];
+  for (let i = 0; i < opcoes.length; i += 2) {
+    const row = opcoes.slice(i, i + 2).map((opt) => {
+      return { text: opt, callback_data: opt };
+    });
+    buttons.push(row);
+  }
+
+  // Linha de navegação
+  buttons.push([
+    { text: '⬅ Voltar', callback_data: 'menu:voltar' },
+    { text: '🏠 Menu', callback_data: 'menu:main' }
+  ]);
+
+  const keyboard = Markup.inlineKeyboard(buttons);
+  return { text: header, keyboard, parse_mode: 'Markdown' };
+};
+
+/**
+ * Menu de revisão assistida para importação de planilhas
+ */
+const menuRevisaoImportacao = (newId) => {
+    const header = `📋 *REVISÃO DE IMPORTAÇÃO* [${newId}]\n\nComo deseja prosseguir com os itens identificados?`;
+    
+    // As opções para revisão de importação serão sempre Inline, mas podemos usar o BTN helper
+    const keyboard = Markup.inlineKeyboard([
+        [{ text: "1. Importar Tudo (Com Alertas)", callback_data: "1. Importar Tudo (Com Alertas)" }],
+        [{ text: "2. Apenas Itens Confiáveis", callback_data: "2. Apenas Itens Confiáveis" }],
+        [{ text: "3. Marcar para Revisão Manual", callback_data: "3. Marcar para Revisão Manual" }],
+        [{ text: "4. Cancelar Importação", callback_data: "4. Cancelar Importação" }]
+    ]);
+
+    return { 
+        text: header, 
+        keyboard: keyboard,
+        parse_mode: 'Markdown'
+    };
 };
 
 module.exports = {
@@ -179,4 +225,6 @@ module.exports = {
   menuRevisaoCotacao,
   menuEscolhaModelo,
   menuConfirmacao,
+  menuOpcoes,
+  menuRevisaoImportacao // Removido menuOpcoesTeclado
 };

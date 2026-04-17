@@ -38,15 +38,23 @@ const sendResult = async (ctx, result) => {
   if (!result || !result.response) return;
   const { response, keyboard, parse_mode, buttons } = result;
 
-  let replyMarkup = keyboard || null;
-  if (!replyMarkup && buttons && buttons.length > 0) {
-    replyMarkup = Markup.inlineKeyboard(buttons.map(b => Markup.button.callback(b.text, b.callback_data)));
+  let opts = { parse_mode: parse_mode || 'Markdown' };
+  
+  if (keyboard) {
+    if (keyboard.reply_markup) {
+      // Já é um Markup do Telegraf (Inline ou outro)
+      Object.assign(opts, keyboard);
+    } else if (keyboard.inline_keyboard) {
+      // Objeto bruto de inline keyboard
+      opts.reply_markup = keyboard;
+    }
+  } else if (buttons && buttons.length > 0) {
+    const inlineKeyboard = buttons.map(b => [Markup.button.callback(b.text, b.callback_data)]);
+    opts.reply_markup = { inline_keyboard: inlineKeyboard };
+  } else {
+    // Se não houver teclado definido, removemos teclados Reply anteriores (limpeza de legado)
+    opts.reply_markup = { remove_keyboard: true };
   }
-
-  const opts = {
-    parse_mode: parse_mode || 'Markdown',
-    ...(replyMarkup ? replyMarkup : {})
-  };
 
   if (Array.isArray(response)) {
     for (const msg of response) {
@@ -56,6 +64,7 @@ const sendResult = async (ctx, result) => {
     await ctx.reply(response, opts);
   }
 };
+
 
 /**
  * TRANSPORT LAYER (TELEGRAM)
@@ -105,31 +114,92 @@ bot.on('callback_query', async (ctx) => {
   const chatId = ctx.from.id;
 
   try {
+    // 1. Feedback visual imediato e limpeza do menu clicado
+    await ctx.answerCbQuery();
+    
+    // Tratamento administrativo (admin:) não remove botões imediatamente se for para visualizar
+    const isAdmin = data.startsWith('admin:');
+    if (!isAdmin) {
+        try { await ctx.editMessageReplyMarkup(undefined); } catch (e) {}
+    }
+
+    if (data.startsWith('admin:view:')) {
+      const orcId = data.split(':')[2];
+      return ctx.reply(`🔍 Detalhes do Alerta [ID ${orcId}]:\nO cliente parou na última pergunta técnica. Verifique o banco para detalhes do escopo atual.`);
+    }
+
+    if (data.startsWith('admin:resolve:')) {
+      const orcId = data.split(':')[2];
+      await memoria.resolverAlertaOrcamento(orcId);
+      try {
+        await ctx.editMessageText(`✅ Alerta do Orçamento [ID ${orcId}] marcado como resolvido.`);
+      } catch (e) {}
+      return;
+    }
+
+    // 2. Mapeamento de cliques do menu principal (se necessário)
     if (data.startsWith('menu:')) {
       const action = data.split(':')[1];
-      await ctx.answerCbQuery();
-      const textMap = { novo_orcamento: '1', continuar_orcamento: '2', salvar_cotacao: '3', consultar: '4', limpar: '5', main: 'menu' };
+      const textMap = { novo_orcamento: 'novo_orcamento', continuar_orcamento: 'continuar_orcamento', salvar_cotacao: 'salvar_cotacao', consultar: 'consultar', limpar: 'limpar', main: 'menu' };
       const result = await dialogueEngine.process(chatId, { text: textMap[action] || action, type: 'text' });
       return sendResult(ctx, result);
     }
 
-    if (data.startsWith('confirm_quote:')) {
-      const draftId = data.split(':')[1];
-      await ctx.answerCbQuery(`✅ Confirmando...`);
-      try {
-        await memoria.atualizarStatusCotacao(draftId, 'confirmed');
-        await memoria.sincronizarPrecosFornecedor(draftId);
-      } catch (err) { console.error(err); }
-      await memoria.limparSessao(chatId);
-      try { await ctx.editMessageText(`✅ Cotação [${draftId}] arquivada!`, { reply_markup: { inline_keyboard: [] } }); } catch (e) {}
-      const result = await dialogueEngine.showMainMenu(chatId, { ...qualificacao.DEFAULT_STATE });
-      return sendResult(ctx, result);
-    }
+    // 3. Clique em pergunta de qualificação (prefixo q: ou texto puro do botão)
+    const rawAction = data.includes(':') ? data.split(':')[1] : data;
+    const result = await dialogueEngine.process(chatId, { text: rawAction, type: 'text' });
+    return sendResult(ctx, result);
 
-    // Outros handlers de callback (cancelar, editar nome, etc) simplificados para o bot.on principal
-    // ...
   } catch (err) {
     console.error("[Callback Error]:", err);
+  }
+});
+
+bot.command('alertas', async (ctx) => {
+  // TODO: Adicionar trava de ADMIN_ID em produção
+  try {
+    const alertas = await memoria.listarOrcamentosEmAlerta();
+    if (alertas.length === 0) {
+      return ctx.reply("✅ Nenhum orçamento em alerta no momento.");
+    }
+
+    await ctx.reply(`⚠️ *Orçamentos aguardando intervenção:*`, { parse_mode: 'Markdown' });
+    
+    for (const alerta of alertas) {
+      const dateStr = new Date(alerta.last_interaction_at).toLocaleString('pt-BR');
+      const buttons = [
+        Markup.button.callback('🔍 Ver', `admin:view:${alerta.id}`),
+        Markup.button.callback('✅ Resolver', `admin:resolve:${alerta.id}`)
+      ];
+      await ctx.reply(`🆔 ID: ${alerta.id}\n📅 Última interação: ${dateStr}`, Markup.inlineKeyboard(buttons));
+    }
+  } catch (err) {
+    console.error("[Admin Error]:", err);
+    ctx.reply("Erro ao buscar alertas.");
+  }
+});
+
+bot.command('followup', async (ctx) => {
+  // Comando para ambiente de testes - simula inatividade curta (1 hora) ao invés de 24h
+  try {
+    const FollowUpService = require('./services/FollowUpService');
+    await ctx.reply("🔄 Iniciando rotina de Follow-up (Teste)...");
+    
+    // Forçando 1 hora de inatividade para facilitar testes
+    const resultado = await FollowUpService.processarRotinaManual(1);
+    
+    let report = `📊 *Teste de Follow-up (Inatividade > 1h)*\n`;
+    report += `Elegíveis encontrados: ${resultado.total}\n`;
+    report += `Follow-ups disparados: ${resultado.executados}\n\n`;
+    
+    if (resultado.logs.length > 0) {
+      report += `*Logs:*\n- ${resultado.logs.join('\n- ')}`;
+    }
+    
+    await ctx.reply(report, { parse_mode: 'Markdown' });
+  } catch (err) {
+    console.error("[FollowUp Error]:", err);
+    ctx.reply("Erro ao executar follow-up manual.");
   }
 });
 
