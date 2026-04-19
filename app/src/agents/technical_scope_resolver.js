@@ -288,46 +288,67 @@ const calculateStorage = async (scope, cameraCount, isIP) => {
 };
 
 const calculateCables = (scope, cameraCount) => {
-  const totalRaw = parseFloat(scope.cable_total_m) || 0;
+  const mode = scope.cable_calc_mode || 'total';
+  const rawDist = scope.raw_distances || "";
   const alertLevel = scope.distance_alert_level || 'none';
+  const slack = scope.cable_slack_per_point_m || 4;
+  const factor = scope.route_factor || 1.3;
+
+  let totalM = 0;
+  let maxM = 0;
+
+  if (mode === 'detalhado' && rawDist) {
+    // Modo Detalhado: Soma de distâncias individuais + folga por ponto
+    const distances = rawDist.split(/[,; ]+/).map(d => parseFloat(d)).filter(d => !isNaN(d));
+    distances.forEach(d => {
+      const adjusted = d + slack;
+      totalM += adjusted;
+      if (d > maxM) maxM = d;
+    });
+  } else if (mode === 'estimado' && rawDist) {
+    // Modo Estimado: (Média * Fator de Rota) + Folga por ponto
+    const avgDistance = parseFloat(rawDist) || 0;
+    const perPoint = (avgDistance * factor) + slack;
+    totalM = cameraCount * perPoint;
+    maxM = avgDistance * factor;
+  } else {
+    // Modo Total (Legado/Manual)
+    totalM = parseFloat(scope.cable_total_m) || 0;
+    maxM = 0;
+  }
   
   // 1. Metragem Total para Compra
-  // Prioridade absoluta para o valor informado pelo operador
-  scope.estimated_cable_total_m = Math.ceil(totalRaw);
+  scope.estimated_cable_total_m = Math.ceil(totalM);
 
   // 2. Risco Técnico de Distância (por ponto)
-  // Se veio do total_only, não afirmamos falha técnica
-  if (scope.distance_source === 'total_only') {
+  if (scope.distance_source === 'total_only' && mode === 'total') {
     scope.max_point_distance_m = 0;
     scope.distance_risk = false;
   } else {
-    // Avalia o nível de alerta selecionado no submenu
-    if (alertLevel === 'above_90') {
-      scope.max_point_distance_m = 95;
-      scope.distance_risk = true;
-      scope.operational_flags.long_distance = true;
-      if (!scope.incompatibilities.includes('ALERT_LONG_DISTANCE')) {
-        scope.incompatibilities.push('ALERT_LONG_DISTANCE');
-      }
-    } else if (alertLevel === 'above_100') {
-      scope.max_point_distance_m = 105;
+    scope.max_point_distance_m = maxM;
+    
+    // Avalia o nível de alerta baseado na maior distância encontrada ou selecionada
+    if (maxM > 100 || alertLevel === 'above_100') {
       scope.distance_risk = true;
       scope.requires_human_review = true;
       scope.waiting_human = true;
       if (!scope.incompatibilities.includes('BLOCK_DISTANCE_LIMIT')) {
         scope.incompatibilities.push('BLOCK_DISTANCE_LIMIT');
       }
+    } else if (maxM > 90 || alertLevel === 'above_90') {
+      scope.distance_risk = true;
+      scope.operational_flags.long_distance = true;
+      if (!scope.incompatibilities.includes('ALERT_LONG_DISTANCE')) {
+        scope.incompatibilities.push('ALERT_LONG_DISTANCE');
+      }
     } else if (alertLevel === 'unknown') {
       scope.requires_human_review = true;
-      // Não afirma falha, mas marca revisão recomendada
     } else {
-      scope.max_point_distance_m = 30; // Padrão seguro
       scope.distance_risk = false;
     }
   }
 
-  // Compatibilidade com campos antigos para o renderizador
-  scope.estimated_cable_per_point_m = scope.max_point_distance_m;
+  scope.estimated_cable_per_point_m = Math.ceil(maxM);
 };
 
 const generateTechnicalPayload = async (session) => {
@@ -494,14 +515,23 @@ const acessorios = [];
     // 2. Tira o próximo maior (8 ou 4)
     if (remainingPorts > 4) {
       const sw8 = await findItemWithFallback('Acessorio', 'Switch POE 8 Portas', 520);
-      acessorios.push({ ...sw8, qtd: 1, categoria: 'Acessorio' });
+      acessorios.push({ ...sw8, qtd: 1, categoria: 'Acessorio', poe_budget_w: 96 });
       switchCount += 1;
       remainingPorts = 0;
     } else if (remainingPorts > 0) {
       const sw4 = await findItemWithFallback('Acessorio', 'Switch POE 4 Portas', 280);
-      acessorios.push({ ...sw4, qtd: 1, categoria: 'Acessorio' });
+      acessorios.push({ ...sw4, qtd: 1, categoria: 'Acessorio', poe_budget_w: 60 });
       switchCount += 1;
       remainingPorts = 0;
+    }
+
+    // Regra de PoE Budgeting (Cálculo de Consumo)
+    const totalConsumptionW = session.camera_quantity * 10; // Média 10W/camera IP
+    const totalBudgetW = acessorios.filter(i => i.poe_budget_w).reduce((acc, i) => acc + (i.poe_budget_w * i.qtd), 0);
+    
+    if (totalConsumptionW > (totalBudgetW * 0.9)) { // Margem de segurança de 10%
+      scope.incompatibilities.push('ALERT_POE_OVERLOAD_RISK');
+      scope.operational_flags.high_complexity = true;
     }
 
     // Regra de Backbone (Interligação entre Switches)

@@ -4,9 +4,9 @@
  */
 
 const HEURISTICS = {
-  quantity: /(\d+)\s*(?:câmera|camera|cam|ponto|canal|canais|unidade|un)/i,
+  quantity: /(\d+(?:[,\.]\d+)?)\s*(?:câmera|camera|cam|ponto|canal|canais|unidade|un)/i,
   tech: /\b(ip|digital|analógica|analogica|ahd|hdcvi|hdcvi)\b/i,
-  storage: /(\d+)\s*(gb|tb)/i,
+  storage: /(\d+(?:[,\.]\d+)?)\s*(gb|tb)/i,
   recorder: /\b(nvr|dvr|hvr|gravador|video recorder)\b/i,
   short_id: /\b(?:orc-|cot-)?(\d{1,6})\b/i,
 
