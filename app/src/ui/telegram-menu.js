@@ -37,6 +37,10 @@ const BTN = {
   MODELO_B:          { text: '📦 Modelo B — Mat + MDO',    callback_data: 'model:B' },
   MODELO_AMBOS:      { text: '📊 Gerar os Dois',           callback_data: 'model:ambos' },
 
+  // Confirmação de Reset
+  RESET_SIM:         { text: '✅ Sim, cancelar e apagar', callback_data: 'reset:confirm' },
+  RESET_NAO:         { text: '❌ Não, continuar orçamento', callback_data: 'reset:cancel' },
+
   // Ações de Confirmação Genéricas
   SIM:               { text: '✅ Sim, salvar',             callback_data: 'confirm:sim' },
   NAO:               { text: '❌ Não, descartar',          callback_data: 'confirm:nao' },
@@ -58,6 +62,7 @@ const LINHAS = {
 
   modelo:          [BTN.MODELO_A, BTN.MODELO_B, BTN.MODELO_AMBOS],
   confirmacao:     [BTN.SIM, BTN.NAO],
+  confirmacao_reset: [BTN.RESET_SIM, BTN.RESET_NAO],
   voltar:          [BTN.VOLTAR_MENU],
 };
 
@@ -218,6 +223,17 @@ const menuRevisaoImportacao = (newId) => {
     };
 };
 
+/**
+ * Menu de confirmação de reset de orçamento.
+ */
+const menuConfirmacaoReset = () => {
+  const header = `⚠️ *CONFIRMAÇÃO DE CANCELAMENTO*\n\nTem certeza que deseja cancelar e apagar este orçamento?\n\n_Esta ação não pode ser desfeita._`;
+  const keyboard = Markup.inlineKeyboard([
+    LINHAS.confirmacao_reset
+  ]);
+  return { text: header, keyboard, parse_mode: 'Markdown' };
+};
+
 module.exports = {
   BTN,
   menuPrincipal,
@@ -226,5 +242,6 @@ module.exports = {
   menuEscolhaModelo,
   menuConfirmacao,
   menuOpcoes,
-  menuRevisaoImportacao // Removido menuOpcoesTeclado
+  menuRevisaoImportacao,
+  menuConfirmacaoReset
 };

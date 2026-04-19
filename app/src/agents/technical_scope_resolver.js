@@ -526,6 +526,8 @@ const acessorios = [];
 
   if (session.material_source && session.material_source.includes('Cliente')) {
     scope.incompatibilities.push('REVIEW_CLIENT_MATERIAL');
+    scope.requires_human_review = true; // REGRA CRÍTICA: Sempre trava se material for do cliente
+    scope.waiting_human = true;          // Força aguardar revisão
   }
 
   if (session.installation_environment === 'Misto' || infraStatus.includes('parcial')) {

@@ -179,6 +179,10 @@ const classifyIncomingMessage = async (text, estado) => {
   const localResult = parseLocal(text);
   const clean = (text || "").toLowerCase().trim();
   
+  // 1. Tentar Número Puro (Decimais e Unidades) - PROTEÇÃO AGRESSIVA
+  const isTechnicalData = /^(\d+([.,]\d+)?)(m|metros)?$/.test(clean);
+  if (isTechnicalData) return 'answer_pending';
+
   // Se for comando de controle, retorna control_command p/ Engine tratar
   if (localResult.is_reset || localResult.is_greeting || clean.includes('limpar') || clean.includes('reset')) return 'control_command';
 
@@ -200,9 +204,10 @@ const classifyIncomingMessage = async (text, estado) => {
   if (!result) return localResult.intent || 'unknown';
   
   const lower = result.toLowerCase();
+  
   if (lower.includes('fornecedor')) return 'supplier_quote_save';
   if (lower.includes('novo')) return 'client_budget_start';
-  if (lower.includes('reset') || lower.includes('limpar') || lower.includes('apagar') || lower.includes('zero') || lower.includes('recomeçar') || lower.includes('reiniciar') || lower.includes('reinicie')) return 'budget_reset';
+  if (!isTechnicalData && (lower.includes('reset') || lower.includes('limpar') || lower.includes('apagar') || lower.includes('zero') || lower.includes('recomeçar') || lower.includes('reiniciar') || lower.includes('reinicie'))) return 'budget_reset';
   return 'smalltalk';
 };
 
