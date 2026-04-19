@@ -21,3 +21,4 @@ Validar que um pedido de orçamento recebido em texto plano é processado por to
 ## Notas de Progresso
 - **2026-04-13**: Inicialização da story após isolamento do projeto noctua-room.
 - **2026-04-15**: Criação do script `app/test-story-001.js` e validação do fluxo E2E com sucesso.
+- **2026-04-19**: Finalização do README.md completo e estabilização da documentação AIOX.
