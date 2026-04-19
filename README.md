@@ -106,6 +106,8 @@ Baseado na estrutura **AIOX (Codex CLI)**:
 
 - **Quality Gates**: Todos os PRs devem passar por linting e testes automatizados.
 - **Traceability**: Interações registradas em logs rotativos (`bot.log`) e banco SQLite para auditoria.
+- **Governança**: [Critérios de Escalonamento Humano](docs/governance-escalation.md).
+
 
 ---
 **Desenvolvido por AIOX Squads - Synkra Codex.**
