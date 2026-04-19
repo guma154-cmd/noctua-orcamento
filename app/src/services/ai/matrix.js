@@ -31,8 +31,8 @@ const ELIGIBILITY_MATRIX = {
     }
   ],
   "PDF": [
-    { provider: groq, priority: 1 },
-    { provider: sambanova, priority: 2 },
+    { provider: geminiPrimary, priority: 1 },
+    { provider: groq, priority: 2 },
     { provider: openrouter, params: { model: "meta-llama/llama-3.3-70b-instruct" }, priority: 3 }
   ],  "AUDIO": [
     { provider: groq, priority: 1 },
