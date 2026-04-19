@@ -7,7 +7,7 @@
         "@rafarafarafa/nano-banana-pro-mcp"
       ],
       "env": {
-        "GEMINI_API_KEY": "AIzaSyAC4Lnjivv613zBALIajKS-GQUS5hMO1CU"
+        "GEMINI_API_KEY": ""
       }
     },
     "context7": {
