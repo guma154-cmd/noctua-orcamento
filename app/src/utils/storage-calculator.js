@@ -1,27 +1,45 @@
 const { BITRATE_GBDAY, OVERHEAD_SISTEMA } = require("../catalog/technology-constants");
 
 /**
+ * Converte strings de capacidade (ex: "500 GB", "1 TB") para número em TB.
+ */
+function parseStorageToTB(input) {
+  if (!input) return 0;
+  const str = String(input).toUpperCase().replace(',', '.');
+  const num = parseFloat(str);
+  if (isNaN(num)) return 0;
+
+  if (str.includes('GB')) return num / 1024;
+  if (str.includes('TB')) return num;
+  
+  // Se for só número > 10, assume GB (ex: 500)
+  if (num > 10) return num / 1024;
+  return num;
+}
+
+/**
  * Calcula estimativa média de dias de gravação.
  * SPRINT 1 - NOCTUA V5
  */
-function calcRetentionDays(hdCapacityTB, numCameras, resolution) {
-  // Guards — nunca retornar NaN ou Infinity
-  const hdStr = String(hdCapacityTB || "0").replace(',', '.');
-  const hd  = parseFloat(hdStr);
+function calcRetentionDays(hdCapacityRaw, numCameras, resolution) {
+  const hd = parseStorageToTB(hdCapacityRaw);
   const cam = parseInt(numCameras);
+  const res = resolution || '2MP';
   
-  if (isNaN(hd)  || hd  <= 0) return { days: null, error: 'HD_INVALIDO', message: 'HD inválido' };
-  if (isNaN(cam) || cam <= 0) return { days: null, error: 'CAMERAS_INVALIDO', message: 'Quantidade de câmeras inválida' };
+  if (hd <= 0) return { days: null, error: 'HD_INVALIDO', message: 'Capacidade de HD inválida' };
+  if (cam <= 0) return { days: null, error: 'CAMERAS_INVALIDO', message: 'Quantidade de câmeras inválida' };
 
-  const bitrate     = BITRATE_GBDAY[resolution] ?? BITRATE_GBDAY['2MP'];
+  const bitrate     = BITRATE_GBDAY[res] ?? BITRATE_GBDAY['2MP'];
   const hdUsableGB  = (hd * 1024) * (1 - OVERHEAD_SISTEMA);
   const consumoDia  = bitrate * cam;
   const days        = Math.floor(hdUsableGB / consumoDia);
 
+  const displayHD = hd < 1 ? `${Math.round(hd * 1024)}GB` : `${hd}TB`;
+
   return {
     days,
     hdTB: hd,
-    message: `📼 ESTIMATIVA DE GRAVAÇÃO\nHD: ${hd}TB | Câmeras: ${cam} × ${resolution}\nRetenção média estimada: ~${days} dias\n_(H.265, gravação contínua)_`
+    message: `📼 ESTIMATIVA DE GRAVAÇÃO\nHD: ${displayHD} | Câmeras: ${cam} × ${res}\nRetenção média estimada: ~${days} dias\n_(H.265, gravação contínua)_`
   };
 }
 
@@ -45,4 +63,4 @@ function calcHDForDays(daysDesired, numCameras, resolution) {
   return 'HD 10TB SkyHawk';
 }
 
-module.exports = { calcRetentionDays, calcHDForDays };
+module.exports = { calcRetentionDays, calcHDForDays, parseStorageToTB };
