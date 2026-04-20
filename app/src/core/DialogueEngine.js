@@ -150,28 +150,31 @@ class DialogueEngine {
 
       // 1.1 Tech Review
       if (session.flow_status === 'tech_review') {
-        const operationalMessages = require('../utils/operational_messages');
-        const hasCriticalBlock = (session.technical_payload.incompatibilities || []).some(code => operationalMessages.translate(code).severity === operationalMessages.SEVERITY.BLOCK);
+        const isIgnorar = cleanText.includes('ignorar');
+        const isProsseguir = cleanText === '1' || cleanText.includes('sim') || cleanText.includes('prosseguir');
+        const isCorrigir = cleanText === '2' || cleanText.includes('corrigir');
 
-        if (cleanText === '1' || cleanText.includes('sim') || cleanText.includes('prosseguir')) {
-          if (hasCriticalBlock) {
-            return { response: "❌ *BLOQUEIO CRÍTICO:* Rafael, este orçamento possui inconsistências técnicas graves que impedem a finalização automática. Por favor, selecione 'Corrigir Dados'.", status: 'tech_review' };
-          }
+        if (isProsseguir || isIgnorar) {
           await this.syncNoctuaStatus(chatId, session, STATUS_NOCTUA.QUALIFIED);
           
           const result = await this.executeBudgetWorkflow(chatId, session);
-          const resumo = {
-              orcamento_id: result.orcamento_id,
-              relatorio_interno: orcamento.gerarRelatorioOperacional('B', result)
-          };
-
-          session.last_question_family = 'MODEL_CHOICE';
-          session.flow_status = 'awaiting_model_choice';
-          await memoria.salvarSessao(chatId, session);
+          const model = session.budget_model || 'A';
           
-          const menuReview = menus.menuRevisaoOrcamento(resumo);
-          return { response: menuReview.text, keyboard: menuReview.keyboard, status: 'awaiting_model_choice' };
-        } else if (cleanText === '2' || cleanText.includes('corrigir')) {
+          const relOperacional = orcamento.gerarRelatorioOperacional(model, result);
+          let propostaTextual = model === 'A' ? result.propostas.modelo_a : result.propostas.modelo_b;
+
+          if (isIgnorar) {
+              relOperacional = "⚠️ *REVISÃO MANUAL SOLICITADA PELO OPERADOR*\n" + relOperacional;
+          }
+
+          await memoria.limparSessao(chatId);
+
+          return { 
+            response: `📍 *RELATÓRIO OPERACIONAL*\n${relOperacional}\n\n━━━━━━━━━━━━━━━\n\n📄 *PROPOSTA PARA O CLIENTE*\n${propostaTextual}`,
+            parse_mode: 'Markdown',
+            status: 'idle' 
+          };
+        } else if (isCorrigir) {
           session.technical_scope = {};
           session.flow_status = 'collecting_tech';
           await memoria.salvarSessao(chatId, session);
@@ -306,7 +309,7 @@ class DialogueEngine {
       await memoria.salvarSessao(chatId, session);
 
       if (hasCriticalBlock) {
-        const menu = menus.menuOpcoes(`❌ *BLOQUEIO TÉCNICO CRÍTICO*\n\nDetectamos erros que inviabilizam o orçamento automático:\n${allAlerts}${aiNote}\n\nRafael, estes itens *PRECISAM* ser corrigidos antes de gerar o orçamento.`, ['Corrigir Dados', 'Resetar Orçamento']);
+        const menu = menus.menuOpcoes(`❌ *BLOQUEIO TÉCNICO CRÍTICO*\n\nDetectamos erros que inviabilizam o orçamento automático:\n${allAlerts}${aiNote}\n\nRafael, estes itens *PRECISAM* ser corrigidos. Deseja ignorar e enviar para sua revisão manual ou prefere corrigir agora?`, ['Corrigir Dados', 'Ignorar e Revisar', 'Resetar Orçamento']);
         return { response: menu.text, keyboard: menu.keyboard, status: 'tech_review' };
       }
 
