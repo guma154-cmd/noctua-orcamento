@@ -7,14 +7,17 @@ const { translate } = require("../utils/operational_messages");
  */
 
 const formatarMoeda = (valor) => {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
+  const num = parseFloat(valor);
+  if (isNaN(num)) return 'R$ 0,00';
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 };
 
 const gerarRelatorioOperacional = (modelo, dados) => {
   const financeiro = dados.financeiro;
   const escopo = dados.escopo;
   const orcamento_id = dados.orcamento_id;
-  const qtdCameras = escopo.quantidade || escopo.camera_quantity || 0;
+  const rawQty = escopo.quantidade || escopo.camera_quantity || 0;
+  const qtdCameras = parseInt(rawQty) || 0;
 
   // Tradução de Alertas do Sistema
   let alertasFormatados = "• Nenhum alerta técnico detectado.";
@@ -32,19 +35,20 @@ const gerarRelatorioOperacional = (modelo, dados) => {
     const infraItems = escopo.technical_payload ? escopo.technical_payload.resolved_items.filter(i => i.categoria === 'Infra') : [];
 
     const itens = [
-      { nome: camera.produto, qtd: qtdCameras, custo: camera.preco_custo },
-      { nome: dvr.produto, qtd: 1, custo: dvr.preco_custo },
-      { nome: hd.produto, qtd: 1, custo: hd.preco_custo },
-      ...(acessorios || []).map(a => ({ nome: a.produto, qtd: a.qtd, custo: a.preco_custo })),
-      ...infraItems.map(i => ({ nome: i.produto, qtd: i.qtd, custo: i.preco_custo }))
+      { nome: camera.produto, qtd: qtdCameras, custo: parseFloat(camera.preco_custo) || 0 },
+      { nome: dvr.produto, qtd: 1, custo: parseFloat(dvr.preco_custo) || 0 },
+      { nome: hd.produto, qtd: 1, custo: parseFloat(hd.preco_custo) || 0 },
+      ...(acessorios || []).map(a => ({ nome: a.produto, qtd: parseFloat(a.qtd) || 0, custo: parseFloat(a.preco_custo) || 0 })),
+      ...infraItems.map(i => ({ nome: i.produto, qtd: parseFloat(i.qtd) || 0, custo: parseFloat(i.preco_custo) || 0 }))
     ];
 
     if (cabo) {
-      itens.push({ nome: cabo.produto, qtd: cabo.qtd, custo: cabo.preco_custo });
+      itens.push({ nome: cabo.produto, qtd: parseFloat(cabo.qtd) || 0, custo: parseFloat(cabo.preco_custo) || 0 });
     }
 
     itens.forEach(item => {
-      listaItens.push(`• ${item.nome} — ${item.qtd} x ${formatarMoeda(item.custo)} = ${formatarMoeda(item.qtd * item.custo)}`);
+      const custoTotal = (item.qtd * item.custo);
+      listaItens.push(`• ${item.nome} — ${item.qtd} x ${formatarMoeda(item.custo)} = ${formatarMoeda(custoTotal)}`);
     });
     
     if (cabo && cabo.qtd_compra > cabo.qtd) {
@@ -78,7 +82,8 @@ const gerarRelatorioOperacional = (modelo, dados) => {
 
 const calcularDadosFinanceiros = (escopo, materiais) => {
   let camera, dvr, hd, acessorios = [];
-  const qtdCameras = escopo.quantidade || escopo.camera_quantity || 0;
+  const rawQty = escopo.quantidade || escopo.camera_quantity || 0;
+  const qtdCameras = parseInt(rawQty) || 0;
 
   if (escopo.technical_payload) {
     const payload = escopo.technical_payload;
@@ -92,27 +97,29 @@ const calcularDadosFinanceiros = (escopo, materiais) => {
     hd = materiais.find(r => r.produto.toLowerCase().includes('hd')) || { preco_custo: 300, produto: 'HD 1TB' };
   }
   
-  const custoAcessorios = acessorios.reduce((acc, a) => acc + (a.preco_custo * a.qtd), 0);
+  const custoAcessorios = acessorios.reduce((acc, a) => acc + ((parseFloat(a.preco_custo) || 0) * (parseFloat(a.qtd) || 0)), 0);
   
   // Regra de Infraestrutura
   let custoInfra = 0;
   if (escopo.technical_payload) {
     const infraItems = escopo.technical_payload.resolved_items.filter(i => i.categoria === 'Infra');
-    custoInfra = infraItems.reduce((acc, i) => acc + (i.preco_custo * i.qtd), 0);
+    custoInfra = infraItems.reduce((acc, i) => acc + ((parseFloat(i.preco_custo) || 0) * (parseFloat(i.qtd) || 0)), 0);
   }
 
   // Regra de Cabos Comercial NOCTUA
   let custoCabo = 0;
   let caboItem = null;
-  if (escopo.technical_payload && escopo.technical_payload.estimated_cable_total_m > 0) {
+  const estimatedCable = escopo.technical_payload ? parseFloat(escopo.technical_payload.estimated_cable_total_m) || 0 : 0;
+
+  if (estimatedCable > 0) {
     const payload = escopo.technical_payload;
-    const metragem = payload.estimated_cable_total_m;
+    const metragem = estimatedCable;
     
     // O cabo já vem resolvido do TSR com o preço correto (do banco ou fallback)
     const caboResolvido = payload.resolved_items.find(i => i.categoria === 'Cabo');
     
     if (caboResolvido) {
-      const precoMetro = caboResolvido.preco_custo;
+      const precoMetro = parseFloat(caboResolvido.preco_custo) || 0;
       const metragemCompra = Math.ceil(metragem / 10) * 10;
       custoCabo = metragem * precoMetro;
       caboItem = { 
@@ -124,7 +131,7 @@ const calcularDadosFinanceiros = (escopo, materiais) => {
     }
   }
 
-  const custoMaterial = (camera.preco_custo * qtdCameras) + dvr.preco_custo + hd.preco_custo + custoAcessorios + custoCabo + custoInfra;
+  const custoMaterial = ((parseFloat(camera.preco_custo) || 0) * qtdCameras) + (parseFloat(dvr.preco_custo) || 0) + (parseFloat(hd.preco_custo) || 0) + custoAcessorios + custoCabo + custoInfra;
   
   // Regra RF07: Ticket Mínimo R$ 350,00 como valor final de VENDA (piso absoluto)
   const custoInstalacaoPuro = 150 * qtdCameras;
@@ -162,12 +169,16 @@ const renderizarProposta = (modelo, dados) => {
   const valor = modelo === 'A' ? formatarMoeda(dados.financeiro.valorModeloA) : formatarMoeda(dados.financeiro.valorModeloB);
   const { camera, dvr, hd } = dados.financeiro.detalhes;
   
+  const rawQty = dados.escopo.quantidade || dados.escopo.camera_quantity || 0;
+  const qtdNum = parseInt(rawQty) || 0;
+  const labelCameras = qtdNum === 1 ? 'câmera' : 'câmeras';
+
   let texto = template
     .replace('{{cliente_nome}}', dados.escopo.nome_cliente || 'Cliente')
     .replace('{{local_instalacao}}', dados.escopo.perfil || 'Não informado')
     .replace('{{data_orcamento}}', new Date().toLocaleDateString('pt-BR'))
     .replace('{{orcamento_id}}', dados.orcamento_id)
-    .replace('{{quantidade_cameras}}', dados.escopo.quantidade)
+    .replace('{{quantidade_cameras}}', `${qtdNum} ${labelCameras}`)
     .replace('{{descricao_cameras}}', camera.produto)
     .replace('{{quantidade_gravador}}', '1 unidade')
     .replace('{{descricao_gravador}}', dvr.produto)

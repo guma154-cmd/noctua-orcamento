@@ -19,7 +19,7 @@ ID: \`{{orcamento_id}}\` | Data: {{data_orcamento}}
 *LOCAL:* {{local_instalacao}}
 
 ✅ *ESCOPO DOS SERVIÇOS:*
-• Instalação técnica de {{quantidade_cameras}} câmeras {{descricao_cameras}}
+• Instalação técnica de {{quantidade_cameras}} {{descricao_cameras}}
 • Configuração de {{quantidade_gravador}} {{descricao_gravador}}
 • Montagem de {{quantidade_hd}} {{descricao_hd}}
 • Ajuste de ângulo e detecção de movimento
@@ -53,7 +53,7 @@ ID: \`{{orcamento_id}}\` | Data: {{data_orcamento}}
 *LOCAL:* {{local_instalacao}}
 
 ✅ *PROJETO INTEGRADO:*
-• Fornecimento e Instalação de {{quantidade_cameras}} câmeras {{descricao_cameras}}
+• Fornecimento e Instalação de {{quantidade_cameras}} {{descricao_cameras}}
 • 01 Gravador Digital {{descricao_gravador}}
 • 01 Armazenamento {{descricao_hd}} (Alta disponibilidade)
 • Toda a infraestrutura lógica e elétrica básica incluída

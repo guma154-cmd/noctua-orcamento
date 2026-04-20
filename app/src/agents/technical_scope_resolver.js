@@ -202,20 +202,20 @@ const findItemWithFallback = async (category, searchName, defaultPrice, options 
         sql: "SELECT *, 'SKU' as origin FROM catalogo_noctua WHERE sku = ? AND ativo = 1",
         params: [searchName]
       },
-      // 2. Item Padrão por Perfil + Categoria + Tecnologia
+      // 2. Busca Legada (Controle de Ativos) - PRIORIDADE SOBRE PADRÕES
+      {
+        sql: "SELECT *, 'LEGACY_CONTROLLED' as origin FROM catalogo_noctua WHERE nome_comercial LIKE ? AND ativo = 1 LIMIT 1",
+        params: [`%${searchName}%`]
+      },
+      // 3. Item Padrão por Perfil + Categoria + Tecnologia
       {
         sql: "SELECT *, 'PROFILE_DEFAULT' as origin FROM catalogo_noctua WHERE categoria = ? AND tecnologia = ? AND perfil_noctua = ? AND item_padrao = 1 AND ativo = 1",
         params: [category, tech, profile]
       },
-      // 3. Item Padrão por Categoria + Tecnologia
+      // 4. Item Padrão por Categoria + Tecnologia
       {
         sql: "SELECT *, 'GLOBAL_DEFAULT' as origin FROM catalogo_noctua WHERE categoria = ? AND tecnologia = ? AND item_padrao = 1 AND ativo = 1",
         params: [category, tech]
-      },
-      // 4. Busca Legada (Controle de Ativos)
-      {
-        sql: "SELECT *, 'LEGACY_CONTROLLED' as origin FROM catalogo_noctua WHERE nome_comercial LIKE ? AND ativo = 1 LIMIT 1",
-        params: [`%${searchName}%`]
       }
     ];
 
@@ -356,6 +356,8 @@ const generateTechnicalPayload = async (session) => {
   const isIP = (session.system_type || "").toLowerCase().includes('ip');
   const sysKey = isIP ? 'ip' : 'analog';
 
+  const cameraCount = parseInt(session.camera_quantity) || 0;
+
   const scope = { 
     ...DEFAULT_SCOPE, 
     profile: session.property_type,
@@ -378,25 +380,26 @@ const generateTechnicalPayload = async (session) => {
   if (routeLabel.includes('simples')) scope.route_factor = 1.15;
   else if (routeLabel.includes('difícil') || routeLabel.includes('dificil')) scope.route_factor = 1.50;
   else scope.route_factor = 1.30;
-calculateCables(scope, session.camera_quantity);
+calculateCables(scope, cameraCount);
 
 // 2. Seleção de Itens Principais
 const getRecorderDivision = (qty) => {
-  if (qty <= 4) return [4];
-  if (qty <= 8) return [8];
-  if (qty <= 16) return [16];
-  if (qty <= 32) return [32];
+  const numQty = parseInt(qty) || 0;
+  if (numQty <= 4) return [4];
+  if (numQty <= 8) return [8];
+  if (numQty <= 16) return [16];
+  if (numQty <= 32) return [32];
   
   // Divisão Multi-Gravador (Conservadora)
-  if (qty <= 36) return [32, 4];
-  if (qty <= 40) return [32, 8];
-  if (qty <= 48) return [32, 16];
-  if (qty <= 64) return [32, 32];
+  if (numQty <= 36) return [32, 4];
+  if (numQty <= 40) return [32, 8];
+  if (numQty <= 48) return [32, 16];
+  if (numQty <= 64) return [32, 32];
   
   return [32, 32, 'REVIEW']; // Acima de 64 exige revisão manual total
 };
 
-const requiredChannelsArray = getRecorderDivision(session.camera_quantity);
+const requiredChannelsArray = getRecorderDivision(cameraCount);
 scope.selected_recorders = [];
 
 for (const channels of requiredChannelsArray) {
@@ -435,7 +438,7 @@ if (scope.selected_camera.sku === 'BLOCK') {
 }
 
 // Storage Dimensionado
-scope.selected_hd = await calculateStorage(scope, session.camera_quantity, isIP);
+scope.selected_hd = await calculateStorage(scope, cameraCount, isIP);
 
 const acessorios = [];
   let cableName = isIP ? 'Cabo de Rede UTP Cat5e' : 'Cabo Coaxial Flexível 4mm';
@@ -447,7 +450,7 @@ const acessorios = [];
 
   const caixaProt = await findItemWithFallback('Acessorio', 'Caixa de Proteção CFTV', 12);
   const kitFix = await findItemWithFallback('Acessorio', 'Kit Fixação (Bucha/Parafuso)', 5);
-  acessorios.push({ ...caixaProt, qtd: session.camera_quantity, categoria: 'Acessorio' });
+  acessorios.push({ ...caixaProt, qtd: cameraCount, categoria: 'Acessorio' });
   acessorios.push({ ...kitFix, qtd: 1, categoria: 'Acessorio' });
 
   // INFRAESTRUTURA
@@ -479,7 +482,7 @@ const acessorios = [];
           acessorios.push({ ...canaleta, qtd: infraMeterage, categoria: 'Infra' });
         }
     }
-    const boxCount = infraStatus.includes('parcial') ? Math.ceil(session.camera_quantity / 4) : session.camera_quantity;
+    const boxCount = infraStatus.includes('parcial') ? Math.ceil(cameraCount / 4) : cameraCount;
     const caixaPass = await findItemWithFallback('Infra', 'Caixa de Passagem 10x10', 15);
     acessorios.push({ ...caixaPass, qtd: boxCount, categoria: 'Infra' });
     const cintas = await findItemWithFallback('Infra', 'Kit Abraçadeira Nylon (100un)', 18);
@@ -490,15 +493,15 @@ const acessorios = [];
     const balun = await findItemWithFallback('Acessorio', 'Balun de Vídeo (Par)', 15);
     const fonte = await findItemWithFallback('Acessorio', 'Fonte 12V 1A', 25);
     const conectorP4 = await findItemWithFallback('Acessorio', 'Conector P4 Macho com Borne', 2.5);
-    acessorios.push({ ...balun, qtd: session.camera_quantity, categoria: 'Acessorio' });
-    acessorios.push({ ...fonte, qtd: session.camera_quantity, categoria: 'Acessorio' });
-    acessorios.push({ ...conectorP4, qtd: session.camera_quantity, categoria: 'Acessorio' });
+    acessorios.push({ ...balun, qtd: cameraCount, categoria: 'Acessorio' });
+    acessorios.push({ ...fonte, qtd: cameraCount, categoria: 'Acessorio' });
+    acessorios.push({ ...conectorP4, qtd: cameraCount, categoria: 'Acessorio' });
   } else {
     const rj45 = await findItemWithFallback('Acessorio', 'Conector RJ45', 1.5);
-    acessorios.push({ ...rj45, qtd: session.camera_quantity * 2, categoria: 'Acessorio' });
+    acessorios.push({ ...rj45, qtd: cameraCount * 2, categoria: 'Acessorio' });
     
     // Topologia de Rede IP (Switches PoE)
-    let remainingPorts = session.camera_quantity;
+    let remainingPorts = cameraCount;
     let switchCount = 0;
 
     // 1. Tira blocos de 16
@@ -526,7 +529,7 @@ const acessorios = [];
     }
 
     // Regra de PoE Budgeting (Cálculo de Consumo)
-    const totalConsumptionW = session.camera_quantity * 10; // Média 10W/camera IP
+    const totalConsumptionW = cameraCount * 10; // Média 10W/camera IP
     const totalBudgetW = acessorios.filter(i => i.poe_budget_w).reduce((acc, i) => acc + (i.poe_budget_w * i.qtd), 0);
     
     if (totalConsumptionW > (totalBudgetW * 0.9)) { // Margem de segurança de 10%
@@ -545,13 +548,13 @@ const acessorios = [];
       scope.backbone_meterage = 0;
     }
 
-    if (session.camera_quantity > 16) {
+    if (cameraCount > 16) {
         scope.incompatibilities.push('REVIEW_TOPOLOGY_COMPLEX');
         if (switchCount > 3) scope.incompatibilities.push('REVIEW_SWITCH_BACKBONE_REQUIRED');
     }
 
     const conectorP4 = await findItemWithFallback('Acessorio', 'Conector P4 Macho com Borne', 2.5);
-    acessorios.push({ ...conectorP4, qtd: session.camera_quantity, categoria: 'Acessorio' });
+    acessorios.push({ ...conectorP4, qtd: cameraCount, categoria: 'Acessorio' });
   }
 
   if (session.material_source && session.material_source.includes('Cliente')) {
@@ -568,7 +571,7 @@ const acessorios = [];
     scope.incompatibilities.push('ALERT_DEFAULT_PROFILE_USED');
   }
 
-  if (session.camera_quantity > 16) {
+  if (cameraCount > 16) {
     scope.operational_flags.high_complexity = true;
     scope.requires_human_review = true; // Projetos > 16 câmeras sempre pedem revisão
   }
@@ -576,12 +579,12 @@ const acessorios = [];
 
   scope.resolved_items = [
     ...scope.selected_recorders.map(r => ({ ...r, qtd: 1, categoria: 'Recorder' })),
-    { ...scope.selected_camera, qtd: session.camera_quantity, categoria: 'Camera' },
+    { ...scope.selected_camera, qtd: cameraCount, categoria: 'Camera' },
     { ...scope.selected_hd, qtd: scope.selected_recorders.length, categoria: 'HD' }, // 1 HD por gravador físico
     ...acessorios
   ];
 
-  scope.operational_flags.high_complexity = session.camera_quantity > 8 || infraStatus.includes('não');
+  scope.operational_flags.high_complexity = cameraCount > 8 || infraStatus.includes('não');
   scope.operational_flags.needs_ladder = scope.external_count > 0 || infraStatus.includes('não');
 
   if (scope.confirmation_mode === 'revisão') {

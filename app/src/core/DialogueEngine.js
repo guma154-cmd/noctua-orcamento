@@ -131,13 +131,27 @@ class DialogueEngine {
 
       // 1.1 Tech Review
       if (session.flow_status === 'tech_review') {
+        const operationalMessages = require('../utils/operational_messages');
+        const hasCriticalBlock = (session.technical_payload.incompatibilities || []).some(code => operationalMessages.translate(code).severity === operationalMessages.SEVERITY.BLOCK);
+
         if (cleanText === '1' || cleanText.includes('sim') || cleanText.includes('prosseguir')) {
+          if (hasCriticalBlock) {
+            return { response: "❌ *BLOQUEIO CRÍTICO:* Rafael, este orçamento possui inconsistências técnicas graves que impedem a finalização automática. Por favor, selecione 'Corrigir Dados'.", status: 'tech_review' };
+          }
           await this.syncNoctuaStatus(chatId, session, STATUS_NOCTUA.QUALIFIED);
+          
+          const result = await this.executeBudgetWorkflow(chatId, session);
+          const resumo = {
+              orcamento_id: result.orcamento_id,
+              relatorio_interno: orcamento.gerarRelatorioOperacional('B', result)
+          };
+
           session.last_question_family = 'MODEL_CHOICE';
           session.flow_status = 'awaiting_model_choice';
           await memoria.salvarSessao(chatId, session);
-          const menuModelo = menus.menuEscolhaModelo(session.meta.draft_id);
-          return { response: menuModelo.text, keyboard: menuModelo.keyboard, status: 'awaiting_model_choice' };
+          
+          const menuReview = menus.menuRevisaoOrcamento(resumo);
+          return { response: menuReview.text, keyboard: menuReview.keyboard, status: 'awaiting_model_choice' };
         } else if (cleanText === '2' || cleanText.includes('corrigir')) {
           session.technical_scope = {};
           session.flow_status = 'collecting_tech';
@@ -155,7 +169,9 @@ class DialogueEngine {
       // 1.2 Pergunta Técnica
       if (session.last_question_family && session.last_question_family.startsWith('TECH_')) {
         const questionId = session.last_question_family.replace('TECH_', '');
-        const resolved = technicalScopeResolver.resolvePendingTechnicalAnswer(text, questionId);
+        // Normalização: remove prefixos se for callback
+        const normalizedText = text.includes(':') ? text.split(':')[1] : text;
+        const resolved = technicalScopeResolver.resolvePendingTechnicalAnswer(normalizedText, questionId);
         
         if (resolved === 'WAIT_FOR_MANUAL') {
           const budgetIdPrefix = session.meta && session.meta.draft_id ? `[${session.meta.draft_id}] ` : "";
@@ -201,10 +217,15 @@ class DialogueEngine {
       if (session.last_question_family === 'CONFIRM_SAVE_BEFORE_EXIT') return await this.handleSaveConfirmation(chatId, text, session);
       if (session.last_question_family === 'MODEL_CHOICE') return await this.handleModelChoice(chatId, text, session);
       if (session.last_question_family === 'MAIN_MENU') return await this.handleMainMenuSelection(chatId, text, session);
-      if (session.last_question_family === 'SUPPLIER_REVIEW') return await this.handleSupplierReview(chatId, text, session);
-      if (session.last_question_family === 'SUPPLIER_INIT') return await this.handleSupplierInitSelection(chatId, text, session);
+      
+      // SUPLEMENTO: Handlers de Cotação de Fornecedor
+      if (text.startsWith('supplier_midia:')) return await this.handleSupplierMidiaSelection(chatId, text, session);
+      if (text.startsWith('confirm_quote:')) return await this.handleSupplierConfirm(chatId, text, session);
+      if (text.startsWith('cancel_quote:')) return await this.handleSupplierCancel(chatId, text, session);
+      if (text.startsWith('edit_name_quote:')) return await this.handleSupplierEditName(chatId, text, session);
 
-      const resolved = qualificacao.resolvePendingAnswer(text, session.last_question_family);
+      const normalizedText = text.includes(':') ? text.split(':')[1] : text;
+      const resolved = qualificacao.resolvePendingAnswer(normalizedText, session.last_question_family);
       if (resolved) {
         if (resolved === 'WAIT_FOR_MANUAL') {
           const budgetIdPrefix = session.meta && session.meta.draft_id ? `[${session.meta.draft_id}] ` : "";
@@ -246,25 +267,45 @@ class DialogueEngine {
     }
     const auditResult = await technicalAuditor.audit(session, payload);
     payload.audit_log = auditResult;
-    if (auditResult.audit_state !== 'APPROVED' || payload.waiting_human || payload.requires_human_review) {
-      const systemIncompatibilities = (payload.incompatibilities || []).map(code => {
-          const t = require('../utils/operational_messages').translate(code);
+    
+    const operationalMessages = require('../utils/operational_messages');
+    const translatedIncompatibilities = (payload.incompatibilities || []).map(code => ({ code, ...operationalMessages.translate(code) }));
+    const hasCriticalBlock = translatedIncompatibilities.some(t => t.severity === operationalMessages.SEVERITY.BLOCK);
+
+    if (auditResult.audit_state !== 'APPROVED' || payload.waiting_human || payload.requires_human_review || hasCriticalBlock) {
+      const systemIncompatibilities = translatedIncompatibilities.map(t => {
           return `• ${t.title}: ${t.message}`;
       });
       const aiFlags = (auditResult.flags || []).map(f => `• [IA] ${f.issue} (Severidade: ${f.severity})`);
       const allAlerts = [...systemIncompatibilities, ...aiFlags].join('\n');
       const aiNote = auditResult.ai_observations ? `\n\n🔍 *Observação do Auditor IA:*\n${auditResult.ai_observations}` : "";
+      
       session.flow_status = 'tech_review';
       await memoria.salvarSessao(chatId, session);
+
+      if (hasCriticalBlock) {
+        const menu = menus.menuOpcoes(`❌ *BLOQUEIO TÉCNICO CRÍTICO*\n\nDetectamos erros que inviabilizam o orçamento automático:\n${allAlerts}${aiNote}\n\nRafael, estes itens *PRECISAM* ser corrigidos antes de gerar o orçamento.`, ['Corrigir Dados', 'Resetar Orçamento']);
+        return { response: menu.text, keyboard: menu.keyboard, status: 'tech_review' };
+      }
+
       const menu = menus.menuOpcoes(`⚠️ *REVISÃO NECESSÁRIA*\n\nDetectamos as seguintes inconsistências:\n${allAlerts}${aiNote}\n\nRafael, deseja prosseguir com o dimensionamento automático ou prefere corrigir os dados?`, ['Sim, prosseguir', 'Corrigir']);
       return { response: menu.text, keyboard: menu.keyboard, status: 'tech_review' };
     }
     await this.syncNoctuaStatus(chatId, session, STATUS_NOCTUA.QUALIFIED);
+    
+    // EXIBIÇÃO DE RESUMO DO ORÇAMENTO (T011)
+    const result = await this.executeBudgetWorkflow(chatId, session);
+    const resumo = {
+        orcamento_id: result.orcamento_id,
+        relatorio_interno: orcamento.gerarRelatorioOperacional('B', result)
+    };
+
     session.last_question_family = 'MODEL_CHOICE';
     session.flow_status = 'awaiting_model_choice';
     await memoria.salvarSessao(chatId, session);
-    const menuModelo = menus.menuEscolhaModelo(session.meta.draft_id);
-    return { response: menuModelo.text, keyboard: menuModelo.keyboard, status: 'awaiting_model_choice' };
+    
+    const menuReview = menus.menuRevisaoOrcamento(resumo);
+    return { response: menuReview.text, keyboard: menuReview.keyboard, status: 'awaiting_model_choice' };
   }
 
   async handleImportReview(chatId, text, session) {
@@ -288,11 +329,19 @@ class DialogueEngine {
       else if (isManual) reviewForced = true;
       session.technical_payload.resolved_items = finalItems;
       session.technical_payload.requires_human_review = reviewForced || session.technical_payload.requires_human_review;
+      
+      const result = await this.executeBudgetWorkflow(chatId, session);
+      const resumo = {
+          orcamento_id: result.orcamento_id,
+          relatorio_interno: orcamento.gerarRelatorioOperacional('B', result)
+      };
+
       session.flow_status = 'awaiting_model_choice';
       session.last_question_family = 'MODEL_CHOICE';
       await memoria.salvarSessao(chatId, session);
-      const menuModelo = menus.menuEscolhaModelo(session.meta.draft_id);
-      return { response: `✅ Importação confirmada!\n\n` + menuModelo.text, keyboard: menuModelo.keyboard, status: 'awaiting_model_choice' };
+
+      const menuReview = menus.menuRevisaoOrcamento(resumo);
+      return { response: menuReview.text, keyboard: menuReview.keyboard, status: 'awaiting_model_choice' };
   }
 
   async continueFlow(chatId, text, session, intent) {
@@ -301,6 +350,15 @@ class DialogueEngine {
       await memoria.salvarSessao(chatId, session);
     }
     const finalIntent = intent || await qualificacao.classifyIncomingMessage(text || "", session);
+    
+    if (finalIntent === 'control_command') {
+        const clean = (text || "").toLowerCase();
+        if (clean.includes('reset') || clean.includes('limpar') || clean.includes('cancelar')) {
+             return await this.process(chatId, { text: 'reset', type: 'text' });
+        }
+        return await this.showMainMenu(chatId, session);
+    }
+
     const decision = await qualificacao.decidirProximaAção(session, finalIntent);
     if (decision.action === 'ask_field') {
       session.meta.retry_count = session.meta.retry_count || {};
@@ -318,20 +376,27 @@ class DialogueEngine {
     }
     if (decision.action === 'resolve_technical_scope') return await this.handleTechnicalScope(chatId, session);
     await memoria.salvarSessao(chatId, session);
-    return { response: "Rafael, o que mais você precisa?", status: 'idle' };
+    
+    // Fallback final
+    const menu = menus.menuPrincipal(session);
+    return { response: "Rafael, não entendi muito bem. O que mais você precisa do sistema?", keyboard: menu.keyboard, status: 'idle' };
   }
 
   async handleModelChoice(chatId, text, session) {
     const choice = text.trim();
+    // Normalização para callback ou texto
+    const cleanChoice = choice.includes(':') ? choice.split(':')[1].toLowerCase() : choice.toLowerCase();
+    
     const orcResult = await this.executeBudgetWorkflow(chatId, session);
-    const cleanChoice = choice.toLowerCase();
     let reportText, clientText;
-    if (choice === '1' || cleanChoice.includes('a')) {
+
+    if (cleanChoice === '1' || cleanChoice === 'a' || cleanChoice.includes('modelo a')) {
       reportText = orcamento.gerarRelatorioOperacional('A', orcResult);
       clientText = orcResult.propostas.modelo_a;
-    } else if (choice === '2' || cleanChoice.includes('b')) {
+    } else if (cleanChoice === '2' || cleanChoice === 'b' || cleanChoice === 'ambos' || cleanChoice.includes('modelo b')) {
+      // Se for 'ambos', geramos o B por padrão no operacional mas enviamos ambos no final
       reportText = orcamento.gerarRelatorioOperacional('B', orcResult);
-      clientText = orcResult.propostas.modelo_b;
+      clientText = cleanChoice === 'ambos' ? `${orcResult.propostas.modelo_a}\n\n---\n\n${orcResult.propostas.modelo_b}` : orcResult.propostas.modelo_b;
     } else {
       const menuModelo = menus.menuEscolhaModelo(session.meta.draft_id);
       return { response: "⚠️ Opção inválida. " + menuModelo.text, keyboard: menuModelo.keyboard, status: 'awaiting_model_choice' };
@@ -354,8 +419,64 @@ class DialogueEngine {
     return await this.showMainMenu(chatId, { ...qualificacao.getDefaultState() });
   }
 
-  async handleSupplierInitSelection(chatId, text, session) { return { response: "Aguardando arquivo...", status: 'awaiting_file' }; }
-  async handleSupplierReview(chatId, text, session) { return { response: "Cotação processada.", status: 'idle' }; }
+  async handleSupplierInitSelection(chatId, text, session) {
+    const draftId = session.meta.draft_id;
+    const menuMidia = menus.menuMidiaFornecedor(draftId);
+    session.last_question_family = 'SUPPLIER_INIT';
+    await memoria.salvarSessao(chatId, session);
+    return { response: menuMidia.text, keyboard: menuMidia.keyboard, status: 'awaiting_file' };
+  }
+
+  async handleSupplierMidiaSelection(chatId, text, session) {
+    const midia = text.split(':')[1];
+    session.meta.supplier_midia_type = midia;
+    session.flow_status = 'awaiting_file';
+    await memoria.salvarSessao(chatId, session);
+
+    const instrucoes = {
+      texto: "Por favor, cole o texto da cotação abaixo:",
+      imagem: "Por favor, envie uma foto nítida da cotação ou nota fiscal:",
+      pdf: "Por favor, envie o arquivo PDF da cotação:",
+      audio: "Por favor, envie o áudio descrevendo os itens da cotação:"
+    };
+
+    return { response: `✅ Modo *${midia.toUpperCase()}* selecionado.\n\n${instrucoes[midia] || 'Pode enviar agora.'}`, status: 'awaiting_file', parse_mode: 'Markdown' };
+  }
+
+  async handleSupplierConfirm(chatId, text, session) {
+    const draftId = text.split(':')[1];
+    console.log(`[Engine] Confirmando cotação de fornecedor: ${draftId}`);
+    
+    // 1. Marcar no banco como confirmada
+    await memoria.confirmarCotacao(draftId);
+    
+    // 2. Sugerir atualizações de preços (opcional/automático)
+    const sugestoes = await fornecedor.sugerirAtualizacaoPrecos(draftId);
+    
+    await memoria.limparSessao(chatId);
+    let msg = `✅ Cotação [${draftId}] salva com sucesso!`;
+    if (sugestoes.sugestoes && sugestoes.sugestoes.length > 0) {
+        msg += `\n\n💡 Detectamos ${sugestoes.sugestoes.length} sugestões de atualização de preço para seu catálogo. Use /alertas para revisar.`;
+    }
+
+    return { response: msg, status: 'idle' };
+  }
+
+  async handleSupplierCancel(chatId, text, session) {
+    await memoria.limparSessao(chatId);
+    return { response: "❌ Operação cancelada. O rascunho foi descartado.", status: 'idle' };
+  }
+
+  async handleSupplierEditName(chatId, text, session) {
+    const draftId = text.split(':')[1];
+    session.meta.awaiting_name_for_draft = draftId;
+    await memoria.salvarSessao(chatId, session);
+    return { response: "✏️ Por favor, digite o novo nome para o fornecedor:", status: 'collecting' };
+  }
+
+  async handleSupplierReview(chatId, text, session) { 
+    return { response: "Rafael, por favor use os botões de Confirmar ou Cancelar para prosseguir com o rascunho.", status: 'awaiting_menu' }; 
+  }
 
   async showMainMenu(chatId, session) {
     session.last_question_family = 'MAIN_MENU';
@@ -366,21 +487,34 @@ class DialogueEngine {
 
   async handleMainMenuSelection(chatId, text, session) {
     const clean = (text || "").toLowerCase().trim();
-    if (text == '1' || clean.includes('novo')) {
+    
+    if (text == '1' || clean === 'novo_orcamento' || clean.includes('novo')) {
       session.active_flow = 'client_quote';
       const newId = await memoria.gerarProximoId();
       session.meta.draft_id = newId;
       session.answered_families = [];
       session.last_question_family = null;
-      session.flow_status = 'collecting'; // Define explicitamente status inicial
+      session.flow_status = 'collecting';
       await memoria.salvarSessao(chatId, session);
       return await this.continueFlow(chatId, "", session, 'client_budget_start');
     }
-    if (text == '2' || clean.includes('planilha')) {
-        session.flow_status = 'awaiting_spreadsheet';
-        await memoria.salvarSessao(chatId, session);
-        return { response: "Por favor, envie o arquivo da planilha.", status: 'awaiting_spreadsheet' };
+
+    if (clean === 'salvar_cotacao' || clean.includes('fornecedor')) {
+      session.active_flow = 'supplier_quote';
+      const newId = await memoria.gerarProximoId();
+      session.meta.draft_id = newId;
+      await memoria.salvarSessao(chatId, session);
+      return await this.handleSupplierInitSelection(chatId, text, session);
     }
+
+    if (text == '2' || clean === 'consultar' || clean.includes('historico')) {
+        return { response: "🔍 Funcionalidade de consulta em desenvolvimento. Por enquanto, foque no Novo Orçamento!", status: 'idle' };
+    }
+
+    if (clean === 'limpar' || clean.includes('sessão')) {
+        return await this.process(chatId, { text: 'reset', type: 'text' });
+    }
+
     return await this.showMainMenu(chatId, session);
   }
 
