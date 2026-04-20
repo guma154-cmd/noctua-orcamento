@@ -1,6 +1,8 @@
 const { db } = require("../db/sqlite");
-const { BITRATE_GBDAY, OVERHEAD_SISTEMA } = require("../catalog/storage-constants");
+const { BITRATE_GBDAY, OVERHEAD_SISTEMA, TECH_TYPE, POE_MODE } = require("../catalog/technology-constants");
 const { calcRetentionDays } = require("../utils/storage-calculator");
+const { selectNVR } = require("../utils/nvr-selector");
+const { selectCable } = require("../utils/cable-selector");
 
 /**
  * TECHNICAL SCOPE RESOLVER - NOCTUA V4 (INFRA MODULE READY)
@@ -255,6 +257,25 @@ const findItemWithFallback = async (category, searchName, defaultPrice, options 
 };
 
 /**
+ * Mapeadores de Flow para Engine (V5)
+ */
+const mapTechType = (label) => {
+    if (!label) return TECH_TYPE.ANALOG;
+    if (label.includes('IP')) return TECH_TYPE.IP;
+    if (label.includes('Analóg')) return TECH_TYPE.ANALOG;
+    if (label.includes('Híbrid')) return TECH_TYPE.HYBRID;
+    return TECH_TYPE.ANALOG;
+};
+
+const mapPoEMode = (label) => {
+    if (!label) return POE_MODE.SWITCH_EXTERNAL;
+    if (label.includes('integrado')) return POE_MODE.NVR_INTEGRATED;
+    if (label.includes('Switch')) return POE_MODE.SWITCH_EXTERNAL;
+    if (label.includes('individual')) return POE_MODE.INDIVIDUAL;
+    return POE_MODE.SWITCH_EXTERNAL;
+};
+
+/**
  * Calculadora de Storage NOCTUA (V5 - SPRINT 5)
  */
 const calculateStorage = async (scope, cameraCount, isIP, session) => {
@@ -372,233 +393,97 @@ const calculateCables = (scope, cameraCount) => {
 
 const generateTechnicalPayload = async (session) => {
   const profile = getProfile(session.property_type);
-  const isIP = (session.system_type || "").toLowerCase().includes('ip');
-  const sysKey = isIP ? 'ip' : 'analog';
-
   const cameraCount = parseInt(session.camera_quantity) || 0;
+  const isModeloB = session.budget_model === 'B';
+  const isModeloC = session.budget_model === 'C';
 
   const scope = { 
     ...DEFAULT_SCOPE, 
     profile: session.property_type,
-    system_type: sysKey,
     incompatibilities: [],
     operational_flags: { ...DEFAULT_SCOPE.operational_flags },
     resolved_items: [],
     ...(session.technical_scope || {})
   };
 
-  // Define a origem da informação de distância
-  if (scope.distance_alert_level !== undefined && scope.distance_alert_level !== null) {
-    scope.distance_source = 'operator_confirmation';
-    // Se entrar no subfluxo detalhado no futuro, aqui será 'detailed'
+  // 1. Definição de Tecnologia e PoE (V5)
+  const techType = mapTechType(session.system_type);
+  const poeMode = mapPoEMode(session.poe_mode);
+  const isIP = techType === TECH_TYPE.IP;
+  const resolution = "2MP"; // Default
+
+  // 2. Seleção de Gravador e Switch (V5)
+  const nvrResult = selectNVR(techType, cameraCount, poeMode);
+  const recorderItem = await findItemWithFallback('Recorder', nvrResult.model, isIP ? 650 : 350, { tech: techType });
+  
+  scope.selected_recorders = [{ ...recorderItem, qtd: 1, categoria: 'Recorder' }];
+  scope.selected_recorder = scope.selected_recorders[0];
+  
+  if (nvrResult.switch) {
+      const switchItem = await findItemWithFallback('Acessorio', nvrResult.switch, 520);
+      scope.resolved_items.push({ ...switchItem, qtd: 1, categoria: 'Acessorio' });
+      scope.network_topology = nvrResult.note;
+  }
+
+  // 3. Seleção de Cabo e Câmera (V5)
+  const maxDistance = scope.max_point_distance_m || 30; // Fallback distance
+  const cableResult = selectCable(techType, resolution, maxDistance);
+  const cableItem = await findItemWithFallback('Cabo', cableResult.label, isIP ? 3.5 : 2.8);
+  
+  if (cableResult.alert) {
+      scope.incompatibilities.push(`BLOCK_${cableResult.alert}`);
+      scope.requires_human_review = true;
+  }
+
+  const cameraName = profile.base_camera[isIP ? 'ip' : 'analog'];
+  scope.selected_camera = await findItemWithFallback('Camera', cameraName, isIP ? 250 : 120, { tech: techType });
+
+  // 4. Acessórios e Infraestrutura (V5)
+  const acessorios = [];
+  acessorios.push({ ...cableItem, qtd: scope.estimated_cable_total_m || (cameraCount * 25), categoria: 'Cabo' });
+
+  if (isIP) {
+      const rj45 = await findItemWithFallback('Acessorio', 'Conector RJ45', 1.5);
+      acessorios.push({ ...rj45, qtd: cameraCount * 2, categoria: 'Acessorio' });
   } else {
-    scope.distance_source = 'total_only';
+      const balun = await findItemWithFallback('Acessorio', 'Balun de Vídeo (Par)', 15);
+      const conectorP4 = await findItemWithFallback('Acessorio', 'Conector P4 Macho com Borne', 2.5);
+      acessorios.push({ ...balun, qtd: cameraCount, categoria: 'Acessorio' });
+      acessorios.push({ ...conectorP4, qtd: cameraCount, categoria: 'Acessorio' });
+      
+      if (poeMode === POE_MODE.INDIVIDUAL || !session.poe_mode) {
+          const fonte = await findItemWithFallback('Acessorio', 'Fonte 12V 1A', 25);
+          acessorios.push({ ...fonte, qtd: cameraCount, categoria: 'Acessorio' });
+      }
   }
-
-  const routeLabel = (scope.route_type_label || "").toLowerCase();
-  if (routeLabel.includes('simples')) scope.route_factor = 1.15;
-  else if (routeLabel.includes('difícil') || routeLabel.includes('dificil')) scope.route_factor = 1.50;
-  else scope.route_factor = 1.30;
-calculateCables(scope, cameraCount);
-
-// 2. Seleção de Itens Principais
-const getRecorderDivision = (qty) => {
-  const numQty = parseInt(qty) || 0;
-  if (numQty <= 4) return [4];
-  if (numQty <= 8) return [8];
-  if (numQty <= 16) return [16];
-  if (numQty <= 32) return [32];
-  
-  // Divisão Multi-Gravador (Conservadora)
-  if (numQty <= 36) return [32, 4];
-  if (numQty <= 40) return [32, 8];
-  if (numQty <= 48) return [32, 16];
-  if (numQty <= 64) return [32, 32];
-  
-  return [32, 32, 'REVIEW']; // Acima de 64 exige revisão manual total
-};
-
-const requiredChannelsArray = getRecorderDivision(cameraCount);
-scope.selected_recorders = [];
-
-for (const channels of requiredChannelsArray) {
-  if (channels === 'REVIEW') {
-    scope.incompatibilities.push('BLOCK_CAPACITY_EXCEEDED');
-    scope.requires_human_review = true;
-    continue;
-  }
-  const recorderSearch = isIP ? `NVR ${channels} Canais IP` : `DVR ${channels} Canais Multi-HD`;
-  const recorder = await findItemWithFallback('Recorder', recorderSearch, isIP ? 650 : 350, { tech: sysKey });
-  
-  if (recorder.sku === 'BLOCK') {
-    scope.incompatibilities.push('BLOCK_CATALOG_CRITICAL_MISSING');
-  } else if (recorder.origin === 'MANUAL') {
-    scope.incompatibilities.push('ALERT_FALLBACK_USED');
-  } else if (recorder.origin === 'LEGACY_CONTROLLED') {
-    scope.incompatibilities.push('ALERT_LEGACY_SOURCE_USED');
-  }
-  
-  scope.selected_recorders.push(recorder);
-}
-
-// Para manter compatibilidade com código que espera selected_recorder (como renderizador)
-scope.selected_recorder = scope.selected_recorders[0]; 
-
-if (scope.selected_recorders.length > 1) {
-  scope.incompatibilities.push('ALERT_MULTI_RECORDER');
-  scope.requires_human_review = true;
-}
-
-const cameraName = profile.base_camera[sysKey];
-scope.selected_camera = await findItemWithFallback('Camera', cameraName, isIP ? 250 : 120, { tech: sysKey });
-
-if (scope.selected_camera.sku === 'BLOCK') {
-  scope.incompatibilities.push('BLOCK_CATALOG_CRITICAL_MISSING');
-}
-
-  // Storage Dimensionado (SPRINT 5)
-  scope.selected_hd = await calculateStorage(scope, cameraCount, isIP, session);
-  
-  if (scope.retention_estimate?.error) {
-      scope.incompatibilities.push('ALERT_STORAGE_ESTIMATE_FAILED');
-  } else if (scope.selected_hd.supplied_by === 'Cliente') {
-      scope.incompatibilities.push('ALERT_CLIENT_MATERIAL_HD');
-  }
-
-const acessorios = [];
-  let cableName = isIP ? 'Cabo de Rede UTP Cat5e' : 'Cabo Coaxial Flexível 4mm';
-  let defaultPrice = isIP ? 3.5 : 2.8;
-  if (scope.cable_type === 'Cat6') { cableName = 'Cabo de Rede UTP Cat6'; defaultPrice = 5.5; }
-
-  const cableItem = await findItemWithFallback('Cabo', cableName, defaultPrice);
-  acessorios.push({ ...cableItem, qtd: scope.estimated_cable_total_m, categoria: 'Cabo' });
 
   const caixaProt = await findItemWithFallback('Acessorio', 'Caixa de Proteção CFTV', 12);
-  const kitFix = await findItemWithFallback('Acessorio', 'Kit Fixação (Bucha/Parafuso)', 5);
   acessorios.push({ ...caixaProt, qtd: cameraCount, categoria: 'Acessorio' });
-  acessorios.push({ ...kitFix, qtd: 1, categoria: 'Acessorio' });
 
   // INFRAESTRUTURA
   const infraStatus = (scope.infra_status || "").toLowerCase();
   if (!infraStatus.includes('existente')) {
-    const manualType = scope.infra_type;
-    const manualMeterage = parseFloat(scope.infra_meterage);
-    const infraMeterage = isNaN(manualMeterage) ? Math.ceil(scope.estimated_cable_total_m * (infraStatus.includes('parcial') ? 0.3 : 1.0)) : manualMeterage;
-
-    if (manualType) {
-        let infraItem = await findItemWithFallback('Infra', manualType, 8.5);
-        acessorios.push({ ...infraItem, qtd: infraMeterage, categoria: 'Infra' });
-        
-        // Adiciona acessórios de fixação/passagem compatíveis
-        if (manualType.includes('Eletroduto')) {
-            const abraca = await findItemWithFallback('Infra', 'Abraçadeira Tipo D 3/4', 1.8);
-            if (infraStatus.includes('possuo')) {
-              abraca.preco_custo = 0;
-              abraca.produto += " (Fornecido pelo cliente)";
-            }
-            acessorios.push({ ...abraca, qtd: Math.ceil(infraMeterage / 2), categoria: 'Infra' });
-        }
-    } else {
-        // Fallback automático por ambiente (original)
-        const environment = (session.installation_environment || "Interno").toLowerCase();
-        if (environment === 'externo' || environment === 'misto') {
-          const eletroduto = await findItemWithFallback('Infra', 'Eletroduto Corrugado 3/4 (Metro)', 4.5);
-          const abraca = await findItemWithFallback('Infra', 'Abraçadeira Tipo D 3/4', 1.8);
-          acessorios.push({ ...eletroduto, qtd: infraMeterage, categoria: 'Infra' });
-          acessorios.push({ ...abraca, qtd: Math.ceil(infraMeterage / 2), categoria: 'Infra' });
-        } else {
-          const canaleta = await findItemWithFallback('Infra', 'Canaleta com Adesivo 20x10mm (Metro)', 8.5);
-          acessorios.push({ ...canaleta, qtd: infraMeterage, categoria: 'Infra' });
-        }
-    }
-    const boxCount = infraStatus.includes('parcial') ? Math.ceil(cameraCount / 4) : cameraCount;
-    const caixaPass = await findItemWithFallback('Infra', 'Caixa de Passagem 10x10', 15);
-    acessorios.push({ ...caixaPass, qtd: boxCount, categoria: 'Infra' });
-    const cintas = await findItemWithFallback('Infra', 'Kit Abraçadeira Nylon (100un)', 18);
-    acessorios.push({ ...cintas, qtd: Math.ceil(scope.estimated_cable_total_m / 100), categoria: 'Infra' });
+      const infraMeterage = parseFloat(scope.infra_meterage) || Math.ceil((scope.estimated_cable_total_m || cameraCount * 25) * 0.7);
+      const environment = (session.installation_environment || "Interno").toLowerCase();
+      
+      const infraType = (environment === 'externo' || environment === 'misto') ? 'Eletroduto Corrugado 3/4 (Metro)' : 'Canaleta com Adesivo 20x10mm (Metro)';
+      const infraItem = await findItemWithFallback('Infra', infraType, 4.5);
+      acessorios.push({ ...infraItem, qtd: infraMeterage, categoria: 'Infra' });
   }
 
-  if (sysKey === 'analog') {
-    const balun = await findItemWithFallback('Acessorio', 'Balun de Vídeo (Par)', 15);
-    const fonte = await findItemWithFallback('Acessorio', 'Fonte 12V 1A', 25);
-    const conectorP4 = await findItemWithFallback('Acessorio', 'Conector P4 Macho com Borne', 2.5);
-    acessorios.push({ ...balun, qtd: cameraCount, categoria: 'Acessorio' });
-    acessorios.push({ ...fonte, qtd: cameraCount, categoria: 'Acessorio' });
-    acessorios.push({ ...conectorP4, qtd: cameraCount, categoria: 'Acessorio' });
-  } else {
-    const rj45 = await findItemWithFallback('Acessorio', 'Conector RJ45', 1.5);
-    acessorios.push({ ...rj45, qtd: cameraCount * 2, categoria: 'Acessorio' });
-    
-    // Topologia de Rede IP (Switches PoE)
-    let remainingPorts = cameraCount;
-    let switchCount = 0;
-
-    // 1. Tira blocos de 16
-    if (remainingPorts > 16) {
-      const sw16 = await findItemWithFallback('Acessorio', 'Switch POE 16 Portas', 1100);
-      const count = Math.floor(remainingPorts / 16);
-      if (count > 0) {
-        acessorios.push({ ...sw16, qtd: count, categoria: 'Acessorio' });
-        switchCount += count;
-      }
-      remainingPorts %= 16;
-    }
-    
-    // 2. Tira o próximo maior (8 ou 4)
-    if (remainingPorts > 4) {
-      const sw8 = await findItemWithFallback('Acessorio', 'Switch POE 8 Portas', 520);
-      acessorios.push({ ...sw8, qtd: 1, categoria: 'Acessorio', poe_budget_w: 96 });
-      switchCount += 1;
-      remainingPorts = 0;
-    } else if (remainingPorts > 0) {
-      const sw4 = await findItemWithFallback('Acessorio', 'Switch POE 4 Portas', 280);
-      acessorios.push({ ...sw4, qtd: 1, categoria: 'Acessorio', poe_budget_w: 60 });
-      switchCount += 1;
-      remainingPorts = 0;
-    }
-
-    // Regra de PoE Budgeting (Cálculo de Consumo)
-    const totalConsumptionW = cameraCount * 10; // Média 10W/camera IP
-    const totalBudgetW = acessorios.filter(i => i.poe_budget_w).reduce((acc, i) => acc + (i.poe_budget_w * i.qtd), 0);
-    
-    if (totalConsumptionW > (totalBudgetW * 0.9)) { // Margem de segurança de 10%
-      scope.incompatibilities.push('ALERT_POE_OVERLOAD_RISK');
-      scope.operational_flags.high_complexity = true;
-    }
-
-    // Regra de Backbone (Interligação entre Switches)
-    if (switchCount > 1) {
-      const backbonePerSwitch = 15; // 15 metros por interligação
-      const backboneTotal = (switchCount - 1) * backbonePerSwitch;
-      scope.backbone_meterage = backboneTotal;
-      scope.estimated_cable_total_m += backboneTotal;
-      scope.incompatibilities.push('ALERT_BACKBONE_ADDED');
-    } else {
-      scope.backbone_meterage = 0;
-    }
-
-    if (cameraCount > 16) {
-        scope.incompatibilities.push('REVIEW_TOPOLOGY_COMPLEX');
-        if (switchCount > 3) scope.incompatibilities.push('REVIEW_SWITCH_BACKBONE_REQUIRED');
-    }
-
-    const conectorP4 = await findItemWithFallback('Acessorio', 'Conector P4 Macho com Borne', 2.5);
-    acessorios.push({ ...conectorP4, qtd: cameraCount, categoria: 'Acessorio' });
-  }
-
-  // REGRA DE OURO: SOBREPOSIÇÃO DE MODELO DE FORNECIMENTO (SPRINT 4)
-  const isModeloB = session.budget_model === 'B';
-  const isModeloC = session.budget_model === 'C';
-
+  // 5. Storage (V5)
+  scope.selected_hd = await calculateStorage(scope, cameraCount, isIP, session);
+  
+  // 6. Consolidação e Regras de Fornecimento
   const shouldClientSupply = (categoria) => {
     if (isModeloB) return true;
     if (isModeloC) {
       if (categoria === 'Camera' && session.source_cameras?.includes('Cliente')) return true;
       if (categoria === 'Recorder' && session.source_recorder?.includes('Cliente')) return true;
       if (categoria === 'Cabo' && session.source_cables?.includes('Cliente')) return true;
-      if (categoria === 'Acessorio' && session.source_cables?.includes('Cliente')) return true; // Acessórios seguem os cabos
+      if (categoria === 'Acessorio' && session.source_cables?.includes('Cliente')) return true;
       if (categoria === 'Infra' && session.source_infra?.includes('Cliente')) return true;
-      if (categoria === 'HD' && session.recording?.includes('possuo')) return true; // Compatibilidade legada
+      if (categoria === 'HD' && (session.recording_required?.includes('possuo') || session.recording_required === 'Sim')) return true;
     }
     return false;
   };
@@ -610,13 +495,16 @@ const acessorios = [];
     ...acessorios
   ];
 
-  // Aplicar Custo Zero para itens do Cliente
-  scope.resolved_items = scope.resolved_items.map(item => {
-    if (shouldClientSupply(item.categoria)) {
-      return { ...item, preco_custo: 0, supplied_by: 'Cliente' };
-    }
-    return { ...item, supplied_by: 'NOCTUA' };
-  });
+  scope.resolved_items = scope.resolved_items.map(item => ({
+    ...item,
+    preco_custo: shouldClientSupply(item.categoria) ? 0 : item.preco_custo,
+    supplied_by: shouldClientSupply(item.categoria) ? 'Cliente' : 'NOCTUA'
+  }));
+
+  if (scope.selected_camera?.sku === 'BLOCK' || scope.selected_recorder?.sku === 'BLOCK') {
+      scope.incompatibilities.push('BLOCK_CATALOG_CRITICAL_MISSING');
+      scope.requires_human_review = true;
+  }
 
   if (session.material_source && session.material_source.includes('Cliente') && !isModeloB) {
     scope.incompatibilities.push('REVIEW_CLIENT_MATERIAL');
@@ -624,32 +512,19 @@ const acessorios = [];
     scope.waiting_human = true;
   }
 
-  // No Modelo B, não trava revisão por material (é esperado que seja do cliente)
+  // Model B: No review for material (expected)
   if (isModeloB) {
       scope.requires_human_review = false;
       scope.waiting_human = false;
   }
 
-  if (session.installation_environment === 'Misto' || infraStatus.includes('parcial')) {
-    scope.incompatibilities.push('ALERT_PARTIAL_INFRASTRUCTURE');
-  }
-
-  if (!session.property_type || session.property_type === 'Outro') {
-    scope.incompatibilities.push('ALERT_DEFAULT_PROFILE_USED');
-  }
-
   if (cameraCount > 16) {
     scope.operational_flags.high_complexity = true;
-    scope.requires_human_review = true; // Projetos > 16 câmeras sempre pedem revisão
+    scope.requires_human_review = true;
   }
 
   scope.operational_flags.high_complexity = cameraCount > 8 || infraStatus.includes('não');
-  scope.operational_flags.needs_ladder = scope.external_count > 0 || infraStatus.includes('não');
-
-  if (scope.confirmation_mode === 'revisão') {
-    scope.requires_human_review = true;
-    scope.waiting_human = true;
-  }
+  scope.operational_flags.needs_ladder = infraStatus.includes('não');
 
   return scope;
 };
