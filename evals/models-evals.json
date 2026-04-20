@@ -1,8 +1,8 @@
 {
   "assertions": [
-    { "id": "M001", "description": "Menu de seleção de modelo aparece antes de qualquer pergunta técnica", "status": "pending" },
-    { "id": "M002", "description": "Callback [A], [B], [C] têm handlers registrados", "status": "pending" },
-    { "id": "M003", "description": "Seleção de modelo é salva no estado da sessão", "status": "pending" },
+    { "id": "M001", "description": "Menu de seleção de modelo aparece antes de qualquer pergunta técnica", "status": "pass" },
+    { "id": "M002", "description": "Callback [A], [B], [C] têm handlers registrados", "status": "pass" },
+    { "id": "M003", "description": "Seleção de modelo é salva no estado da sessão", "status": "pass" },
     { "id": "M004", "description": "Fluxo A faz pergunta sobre quantidade de câmeras", "status": "pending" },
     { "id": "M005", "description": "Fluxo A faz pergunta sobre tipo de câmera", "status": "pending" },
     { "id": "M006", "description": "Fluxo A faz pergunta sobre distâncias", "status": "pending" },

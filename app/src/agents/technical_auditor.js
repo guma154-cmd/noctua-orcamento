@@ -20,7 +20,8 @@ REGRAS DE OURO:
 1. O PAYLOAD É A VERDADE: Julgue os itens presentes na lista "items". Se houver 4 câmeras no payload, o projeto tem 4 câmeras, ponto final.
 2. CAPACIDADE NOMINAL: 4 câmeras em gravador de 4 canais (ou 8 em 8, 16 em 16) é PERFEITO. Não sinalize como suspeito.
 3. STORAGE: IP consome 25GB/dia/câmera. Analog consome 15GB/dia/câmera. Use isso para checar o HD.
-4. JSON ESTRITO: Sua resposta deve ser apenas o objeto JSON. Proibido usar ":" dentro de arrays de strings. Use apenas descrições simples nas evidências.
+4. MODELO B (MÃO DE OBRA): Se o modelo for "B", o hardware é do cliente. Falhas de capacidade (ex: NVR subdimensionado) não são falhas da NOCTUA. Relate apenas como observação de risco técnico, NUNCA como se fosse erro de dimensionamento nosso.
+5. JSON ESTRITO: Sua resposta deve ser apenas o objeto JSON. Proibido usar ":" dentro de arrays de strings. Use apenas descrições simples nas evidências.
 
 RESPOSTA (JSON):
 {
@@ -50,6 +51,7 @@ class TechnicalAuditor {
       // 2. Contexto simplificado (evita confusão de contagem)
       const context = {
         meta: {
+          modelo: session.budget_model, // A, B ou C
           perfil: payload.profile,
           tecnologia: payload.system_type,
           ambiente: session.installation_environment,

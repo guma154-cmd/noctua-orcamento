@@ -26,28 +26,32 @@ const QUESTION_FAMILIES = {
     label: 'quantidade de câmeras',
     fields: ['camera_quantity'],
     options: ['4 câmeras', '8 câmeras', '16 câmeras', '32 câmeras', 'Outra quantidade'],
-    prompt: "Quantas câmeras seriam?"
+    prompt: "Quantas câmeras seriam?",
+    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
   },
   installation_environment: {
     label: 'ambiente de instalação',
     fields: ['installation_environment'],
     options: ['Interno', 'Externo', 'Misto'],
     keywords: ['interno', 'externo', 'misto', 'dentro', 'fora', 'rua'],
-    prompt: "O ambiente é:"
+    prompt: "O ambiente é:",
+    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
   },
   system_type: {
     label: 'tipo de sistema',
     fields: ['system_type'],
     options: ['IP (Digital)', 'Analógico (HD)', 'Ainda não sei'],
     keywords: ['ip', 'digital', 'analógico', 'analogico', 'hd'],
-    prompt: "Qual tecnologia prefere?"
+    prompt: "Qual tecnologia prefere?",
+    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
   },
   recording: {
     label: 'gravação',
     fields: ['recording_required'],
     options: ['Sim', 'Não', 'Já possuo o HD', 'Ainda não sei'],
     keywords: ['sim', 'não', 'gravar', 'gravação', 'dvr', 'nvr', 'hd', 'possuo', 'tenho'],
-    prompt: "Vai precisar de gravação?"
+    prompt: "Vai precisar de gravação?",
+    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
   },
   recording_days: {
     label: 'dias de gravação',
@@ -68,14 +72,64 @@ const QUESTION_FAMILIES = {
     fields: ['remote_view'],
     options: ['Sim', 'Não', 'Ainda não sei'],
     keywords: ['celular', 'app', 'remoto', 'internet'],
-    prompt: "Vai precisar acessar pelo celular?"
+    prompt: "Vai precisar acessar pelo celular?",
+    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
   },
   material_source: {
     label: 'material',
     fields: ['material_source'],
     options: ['Cliente fornece', 'NOCTUA fornece', 'Parcial / Não definido'],
     keywords: ['cliente', 'noctua', 'nós', 'eu'],
-    prompt: "Quem vai fornecer o material?"
+    prompt: "Quem vai fornecer o material?",
+    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
+  },
+  labor_camera_points: {
+    label: 'pontos de câmera',
+    fields: ['camera_quantity'],
+    prompt: "Quantos pontos de câmera seriam para instalar?",
+    condition: (estado) => estado.budget_model === 'B'
+  },
+  equipment_acquired: {
+    label: 'equipamentos adquiridos',
+    fields: ['equipment_status'],
+    options: ['Sim, já tenho tudo', 'Não, ainda vou comprar'],
+    prompt: "Os equipamentos já estão adquiridos?",
+    condition: (estado) => estado.budget_model === 'B'
+  },
+  installation_type: {
+    label: 'tipo de instalação',
+    fields: ['installation_complexity'],
+    options: ['Parede normal', 'Teto', 'Altura > 3m', 'Fachada'],
+    prompt: "Qual o tipo de instalação predominante?",
+    condition: (estado) => estado.budget_model === 'B'
+  },
+  cable_path_type: {
+    label: 'passagem de cabo',
+    fields: ['cable_path_complexity'],
+    options: ['Embutida existente', 'Calha/Eletroduto', 'Sobreposta', 'Requer quebra de alvenaria'],
+    prompt: "Como será a passagem do cabeamento?",
+    condition: (estado) => estado.budget_model === 'B'
+  },
+  reuse_cabling: {
+    label: 'reaproveitamento',
+    fields: ['reuse_cabling'],
+    options: ['Sim, aproveitar atual', 'Não, lançar tudo novo'],
+    prompt: "Existe cabeamento existente a reaproveitar?",
+    condition: (estado) => estado.budget_model === 'B'
+  },
+  config_remote: {
+    label: 'configuração remota',
+    fields: ['include_remote_config'],
+    options: ['Sim', 'Não'],
+    prompt: "Incluir configuração de acesso remoto?",
+    condition: (estado) => estado.budget_model === 'B'
+  },
+  training_included: {
+    label: 'treinamento',
+    fields: ['include_training'],
+    options: ['Sim', 'Não'],
+    prompt: "Incluir treinamento de uso para o cliente?",
+    condition: (estado) => estado.budget_model === 'B'
   },
   client_name: {
     label: 'nome do cliente',

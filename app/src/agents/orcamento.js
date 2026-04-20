@@ -62,14 +62,14 @@ const gerarRelatorioOperacional = (modelo, dados) => {
     listaItens.push("• (Material fornecido pelo cliente)");
   }
 
-  const subtotalMateriais = modelo === 'B' ? formatarMoeda(financeiro.custoMaterial) : "R$ 0,00";
-  const valorFinal = modelo === 'A' ? financeiro.valorModeloA : financeiro.valorModeloB;
+  const subtotalMateriais = modelo === 'A' ? formatarMoeda(financeiro.custoMaterial) : "R$ 0,00";
+  const valorFinal = modelo === 'A' ? financeiro.valorCompleto : financeiro.valorMDO;
   
   let relatorio = TEMPLATE_RELATORIO_OPERACIONAL
     .replace('{{orcamento_id}}', orcamento_id)
     .replace('{{cliente_nome}}', escopo.nome_cliente || 'Rafael')
     .replace('{{alertas_sistema}}', alertasFormatados)
-    .replace('{{modelo_gerado}}', modelo === 'A' ? 'Modelo A (Mão de Obra)' : 'Modelo B (Material + MDO)')
+    .replace('{{modelo_gerado}}', modelo === 'A' ? 'Modelo A (Fornecimento Completo)' : 'Modelo B (Mão de Obra)')
     .replace('{{lista_materiais}}', listaItens.join('\n'))
     .replace('{{subtotal_materiais}}', subtotalMateriais)
     .replace('{{mao_obra_instalacao}}', formatarMoeda(financeiro.custoInstalacao))
@@ -131,28 +131,44 @@ const calcularDadosFinanceiros = (escopo, materiais) => {
     }
   }
 
-  const custoMaterial = ((parseFloat(camera.preco_custo) || 0) * qtdCameras) + (parseFloat(dvr.preco_custo) || 0) + (parseFloat(hd.preco_custo) || 0) + custoAcessorios + custoCabo + custoInfra;
-  
-  // Regra RF07: Ticket Mínimo R$ 350,00 como valor final de VENDA (piso absoluto)
-  const custoInstalacaoPuro = 150 * qtdCameras;
+  // 1. CÁLCULO DE MÃO DE OBRA POR COMPLEXIDADE (MODELO B)
+  const complexityBase = 150; // Preço base por ponto
+  const factors = {
+    installation: { 'Parede normal': 0, 'Teto': 30, 'Altura > 3m': 80, 'Fachada': 150 },
+    path: { 'Embutida existente': 0, 'Calha/Eletroduto': 40, 'Sobreposta': 20, 'Requer quebra de alvenaria': 120 }
+  };
+
+  const addInst = factors.installation[escopo.installation_complexity] || 0;
+  const addPath = factors.path[escopo.cable_path_complexity] || 0;
+  const extraConfig = (escopo.include_remote_config === 'Sim' ? 100 : 0);
+  const extraTraining = (escopo.include_training === 'Sim' ? 50 : 0);
+
+  const custoInstalacaoPuro = (qtdCameras * (complexityBase + addInst + addPath)) + extraConfig + extraTraining;
   const fatorMarkup = 1.3;
 
-  let valorModeloA = custoInstalacaoPuro * fatorMarkup;
+  let valorMDO = custoInstalacaoPuro * fatorMarkup;
   let isTicketMinimo = false;
 
-  if (valorModeloA < 350) {
-    valorModeloA = 350;
+  if (valorMDO < 350) {
+    valorMDO = 350;
     isTicketMinimo = true;
   }
 
-  const custoInstalacaoEfetivo = valorModeloA / fatorMarkup;
-  const valorModeloB = (custoMaterial + custoInstalacaoEfetivo) * fatorMarkup;
+  const custoInstalacaoEfetivo = valorMDO / fatorMarkup;
+
+  // 2. CÁLCULO DE MATERIAL (MODELO A / C)
+  const custoMaterial = ((parseFloat(camera.preco_custo) || 0) * qtdCameras) + 
+                        (parseFloat(dvr.preco_custo) || 0) + 
+                        (parseFloat(hd.preco_custo) || 0) + 
+                        custoAcessorios + custoCabo + custoInfra;
+
+  const valorCompleto = (custoMaterial + custoInstalacaoEfetivo) * fatorMarkup;
 
   return {
-    custoMaterial,
-    custoInstalacao: custoInstalacaoEfetivo,
-    valorModeloA,
-    valorModeloB,
+    custoMaterial: isNaN(custoMaterial) ? 0 : custoMaterial,
+    custoInstalacao: isNaN(custoInstalacaoEfetivo) ? 0 : custoInstalacaoEfetivo,
+    valorMDO: isNaN(valorMDO) ? 0 : valorMDO,
+    valorCompleto: isNaN(valorCompleto) ? 0 : valorCompleto,
     isTicketMinimo,
     detalhes: {
       camera,
@@ -165,8 +181,8 @@ const calcularDadosFinanceiros = (escopo, materiais) => {
 };
 
 const renderizarProposta = (modelo, dados) => {
-  const template = modelo === 'A' ? TEMPLATE_CANONICO_MODELO_A : TEMPLATE_CANONICO_MODELO_B;
-  const valor = modelo === 'A' ? formatarMoeda(dados.financeiro.valorModeloA) : formatarMoeda(dados.financeiro.valorModeloB);
+  const valorMDO = formatarMoeda(dados.financeiro.valorMDO);
+  const valorCompleto = formatarMoeda(dados.financeiro.valorCompleto);
   const { camera, dvr, hd } = dados.financeiro.detalhes;
   
   const rawQty = dados.escopo.quantidade || dados.escopo.camera_quantity || 0;
@@ -185,8 +201,8 @@ const renderizarProposta = (modelo, dados) => {
     .replace('{{quantidade_hd}}', '1 unidade')
     .replace('{{descricao_hd}}', hd.produto)
     .replace('{{periodo_gravacao}}', dados.escopo.technical_payload && dados.escopo.technical_payload.retention_days_estimate ? `${dados.escopo.technical_payload.retention_days_estimate} dias (Baseado no HD do cliente)` : `${dados.escopo.recording_days || 15} dias (Dimensionamento Noctua)`)
-    .replace('{{valor_modelo_a}}', valor)
-    .replace('{{valor_modelo_b}}', valor)
+    .replace('{{valor_modelo_a}}', valorCompleto) // NOVO PADRÃO: A = COMPLETO
+    .replace('{{valor_modelo_b}}', valorMDO)      // NOVO PADRÃO: B = MDO
     .replace('{{forma_pagamento}}', 'A combinar (Pix / Cartão)')
     .replace(/{{linha_extra_.*?}}/g, '');
 
