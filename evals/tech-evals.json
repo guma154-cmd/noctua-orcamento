@@ -1,0 +1,47 @@
+{
+  "version": "1.0.0",
+  "name": "Noctua Tech Stack Evals",
+  "scenarios": [
+    {
+      "id": "TECH_V5_001",
+      "description": "Cenário IP Puro com PoE Integrado",
+      "input": {
+        "budget_model": "A",
+        "system_type": "IP (Cabo de Rede)",
+        "poe_mode": "NVR com PoE integrado (Direto no gravador)",
+        "camera_quantity": "8"
+      },
+      "assertions": [
+        { "path": "selected_recorder.produto", "op": "contains", "value": "NVR 8 Canais POE" },
+        { "path": "resolved_items", "op": "none_match", "value": "Switch POE" }
+      ]
+    },
+    {
+      "id": "TECH_V5_002",
+      "description": "Cenário IP com Switch Externo para Alta Escala",
+      "input": {
+        "budget_model": "A",
+        "system_type": "IP (Cabo de Rede)",
+        "poe_mode": "Switch PoE externo (Centralizado)",
+        "camera_quantity": "16"
+      },
+      "assertions": [
+        { "path": "selected_recorder.produto", "op": "contains", "value": "NVR 16 Canais IP" },
+        { "path": "resolved_items", "op": "any_match", "value": "Switch POE 16 Portas" }
+      ]
+    },
+    {
+      "id": "TECH_V5_003",
+      "description": "Cenário Analógico Convencional",
+      "input": {
+        "budget_model": "A",
+        "system_type": "Analógica (Cabo Coaxial)",
+        "camera_quantity": "4"
+      },
+      "assertions": [
+        { "path": "selected_recorder.produto", "op": "contains", "value": "DVR 4 Canais Multi-HD" },
+        { "path": "resolved_items", "op": "any_match", "value": "Cabo Coaxial" }
+      ]
+    }
+  ]
+}
