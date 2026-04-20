@@ -32,7 +32,13 @@ class DialogueEngine {
   }
   
   async process(chatId, messageContent) {
-    let { text, type, filePath, mimeType } = messageContent;
+    // 0. HARDENING: Garantir que messageContent seja um objeto e tenha fallbacks
+    if (typeof messageContent === 'string') {
+      messageContent = { text: messageContent, type: 'text' };
+    }
+    
+    let { text, type, filePath, mimeType } = messageContent || {};
+    text = text || ""; // Garantia de que text nunca será undefined
 
     // 0. SUPORTE GLOBAL A ÁUDIO (MULTIMODAL)
     if ((type === 'voice' || type === 'audio') && filePath) {
@@ -44,7 +50,7 @@ class DialogueEngine {
       }
     }
 
-    const cleanText = (text || "").toLowerCase().trim();
+    const cleanText = text.toLowerCase().trim();
 
     // 1. GESTÃO DE COMANDOS GLOBAIS
     const resetKeywords = ['reset', 'reiniciar', 'limpar', 'limpar sessão', '/start', 'start'];
@@ -243,10 +249,10 @@ class DialogueEngine {
       if (session.last_question_family === 'MAIN_MENU') return await this.handleMainMenuSelection(chatId, text, session);
       
       // SUPLEMENTO: Handlers de Cotação de Fornecedor
-      if (text.startsWith('supplier_midia:')) return await this.handleSupplierMidiaSelection(chatId, text, session);
-      if (text.startsWith('confirm_quote:')) return await this.handleSupplierConfirm(chatId, text, session);
-      if (text.startsWith('cancel_quote:')) return await this.handleSupplierCancel(chatId, text, session);
-      if (text.startsWith('edit_name_quote:')) return await this.handleSupplierEditName(chatId, text, session);
+      if (text && text.startsWith('supplier_midia:')) return await this.handleSupplierMidiaSelection(chatId, text, session);
+      if (text && text.startsWith('confirm_quote:')) return await this.handleSupplierConfirm(chatId, text, session);
+      if (text && text.startsWith('cancel_quote:')) return await this.handleSupplierCancel(chatId, text, session);
+      if (text && text.startsWith('edit_name_quote:')) return await this.handleSupplierEditName(chatId, text, session);
 
       const normalizedText = text.includes(':') ? text.split(':')[1] : text;
       const resolved = qualificacao.resolvePendingAnswer(normalizedText, session.last_question_family);
@@ -258,8 +264,11 @@ class DialogueEngine {
           return { response: menu.text, keyboard: menu.keyboard, status: 'collecting' };
         }
         const family = session.last_question_family;
-        const field = qualificacao.QUESTION_FAMILIES[family].fields[0];
-        session[field] = resolved;
+        const familyConfig = qualificacao.QUESTION_FAMILIES[family];
+        if (familyConfig && familyConfig.fields) {
+            const field = familyConfig.fields[0];
+            session[field] = resolved;
+        }
         if (!session.answered_families.includes(family)) session.answered_families.push(family);
         session.last_question_family = null;
         await memoria.salvarSessao(chatId, session);

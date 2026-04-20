@@ -363,25 +363,33 @@ const atualizarEstado = async (texto, estadoAtual) => {
   
   // 1. Tentar Resolver Resposta Pendente (DETERMINÍSTICO)
   if (estadoAtual.last_question_family) {
-    const resolved = resolvePendingAnswer(texto, estadoAtual.last_question_family);
-    if (resolved && resolved !== 'WAIT_FOR_MANUAL') {
-      const field = QUESTION_FAMILIES[estadoAtual.last_question_family].fields[0];
-      estadoAtual[field] = resolved;
+    const family = estadoAtual.last_question_family;
+    const config = QUESTION_FAMILIES[family];
+    
+    if (config) {
+      const resolved = resolvePendingAnswer(texto, family);
+      
+      if (resolved && resolved !== 'WAIT_FOR_MANUAL') {
+        const field = config.fields[0];
+        estadoAtual[field] = resolved;
 
-      // Sincronização automática para Modelos A e B
-      if (field === 'budget_model') {
-        if (resolved === 'A') estadoAtual.material_source = 'NOCTUA fornece';
-        if (resolved === 'B') estadoAtual.material_source = 'Cliente fornece';
-      }
+        // Sincronização automática para Modelos A e B
+        if (field === 'budget_model') {
+          if (resolved === 'A') estadoAtual.material_source = 'NOCTUA fornece';
+          else if (resolved === 'B') estadoAtual.material_source = 'Cliente fornece';
+          else estadoAtual.material_source = 'Misto'; // Modelo C
+        }
 
-      if (!estadoAtual.answered_families.includes(estadoAtual.last_question_family)) {
-        estadoAtual.answered_families.push(estadoAtual.last_question_family);
+        if (!estadoAtual.answered_families.includes(family)) {
+          estadoAtual.answered_families.push(family);
+        }
+        estadoAtual.last_question_family = null; // LIMPA PENDÊNCIA
+        return estadoAtual;
       }
-      estadoAtual.last_question_family = null; // LIMPA PENDÊNCIA
-      return estadoAtual;
+      
+      // Se for WAIT_FOR_MANUAL, apenas retorna o estado sem limpar pendência
+      if (resolved === 'WAIT_FOR_MANUAL') return estadoAtual;
     }
-    // Se for WAIT_FOR_MANUAL, apenas retorna o estado sem limpar pendência
-    if (resolved === 'WAIT_FOR_MANUAL') return estadoAtual;
   }
 
   // 2. Tentar IA (Modo Livre / Extração Transversal)
@@ -418,23 +426,19 @@ const atualizarEstado = async (texto, estadoAtual) => {
 
   if (response) {
     try {
-      // Limpeza de blocos de código markdown se existirem
       const cleanJson = response.replace(/```json|```/g, "").trim();
       const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
       const dadosIA = JSON.parse(jsonMatch ? jsonMatch[0] : cleanJson);
       
       console.log(`[IA-Qualificacao] Extraído:`, JSON.stringify(dadosIA));
 
-      // Normalização: Garantir que camera_quantity seja número se possível
       if (dadosIA.camera_quantity !== undefined && dadosIA.camera_quantity !== null) {
         const parsedNum = parseInt(dadosIA.camera_quantity);
         if (!isNaN(parsedNum)) dadosIA.camera_quantity = parsedNum;
       }
 
-      // Merge dos dados
       Object.assign(estadoAtual, dadosIA);
 
-      // Limpeza de pendência SE o campo correspondente foi preenchido
       if (estadoAtual.last_question_family) {
         const fam = estadoAtual.last_question_family;
         const config = QUESTION_FAMILIES[fam];
