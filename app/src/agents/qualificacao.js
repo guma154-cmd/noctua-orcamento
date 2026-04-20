@@ -19,9 +19,9 @@ const QUESTION_FAMILIES = {
     label: 'tecnologia',
     fields: ['system_type'],
     options: ['IP (Cabo de Rede)', 'Analógica (Cabo Coaxial)', 'Híbrida (Existente + Nova)'],
-    keywords: ['ip', 'digital', 'cvi', 'tvi', 'ahd', 'híbrida', 'hibrida', 'analógica', 'analogica', 'rede'],
+    keywords: ['ip', 'digital', 'ip (cabo de rede)', 'cvi', 'tvi', 'ahd', 'híbrida', 'hibrida', 'analógica', 'analogica', 'rede'],
     prompt: "🔧 TIPO DE TECNOLOGIA\nQual a tecnologia das câmeras deste projeto?",
-    condition: (estado) => true // Essencial
+    condition: (estado) => true 
   },
   poe_mode: {
     label: 'PoE',
@@ -59,7 +59,6 @@ const QUESTION_FAMILIES = {
     label: 'ambiente de instalação',
     fields: ['installation_environment'],
     options: ['Interno', 'Externo', 'Misto'],
-    keywords: ['interno', 'externo', 'misto', 'dentro', 'fora', 'rua'],
     prompt: "O ambiente é:",
     condition: (estado) => true
   },
@@ -67,32 +66,33 @@ const QUESTION_FAMILIES = {
     label: 'gravação',
     fields: ['recording_required'],
     options: ['Sim', 'Não', 'Já possuo o HD', 'Não sabe (Verificar)'],
-    keywords: ['sim', 'não', 'gravar', 'gravação', 'dvr', 'nvr', 'hd', 'possuo', 'tenho', 'sabe', 'verificar'],
     prompt: "O sistema terá gravação?",
     condition: (estado) => true 
   },
   recording_days: {
     label: 'dias de gravação',
     fields: ['recording_days'],
-    options: ['7 dias (Econômico)', '15 dias (Padrão)', '30 dias (Segurança Máxima)', 'Outro (Personalizado)'],
-    prompt: "Quantos dias de gravação deseja manter?",
+    options: ['7 dias', '15 dias', '30 dias', '60 dias', 'Outro (Personalizado)'],
+    prompt: "💾 RETENÇÃO DE GRAVAÇÃO\nQuantos dias de gravação o cliente deseja?",
     condition: (estado) => {
         if (estado.recording_required !== 'Sim') return false;
+        // Modelo A sempre pergunta dias. 
+        // Modelo C pergunta dias se a NOCTUA fornecer o gravador/HD.
         if (estado.budget_model === 'A') return true;
-        if (estado.budget_model === 'C' && estado.source_recorder?.includes('NOCTUA')) return true;
+        if (estado.budget_model === 'C' && (estado.source_recorder?.includes('NOCTUA') || (estado.source_cables && !estado.source_recorder))) return true;
         return false;
     }
   },
   client_hd_size: {
     label: 'tamanho do HD',
     fields: ['client_hd_gb'],
-    options: ['500 GB', '1 TB', '2 TB', '4 TB', 'Outro tamanho'],
-    prompt: "Qual a capacidade do HD do cliente?",
+    options: ['500 GB', '1 TB', '2 TB', '4 TB', '6 TB', '8 TB', 'Outro tamanho'],
+    prompt: "💾 HD DO CLIENTE\nQual a capacidade do HD que o cliente já possui?",
     condition: (estado) => {
         if (estado.recording_required === 'Não') return false;
-        if (estado.recording_required?.includes('possuo')) return true;
+        if (estado.recording_required?.toLowerCase().includes('possuo')) return true;
         if (estado.budget_model === 'B' && estado.recording_required === 'Sim') return true;
-        if (estado.budget_model === 'C' && estado.source_recorder?.includes('Cliente') && estado.recording_required === 'Sim') return true;
+        if (estado.budget_model === 'C' && estado.source_recorder?.includes('Cliente')) return true;
         return false;
     }
   },
