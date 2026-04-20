@@ -1,26 +1,26 @@
-/**
- * TECH CONSTANTS - NOCTUA V5
- */
-
+// Tecnologias suportadas
 const TECH_TYPE = {
   IP:        'ip',
   ANALOG:    'analog',
   HYBRID:    'hybrid',
 };
 
+// Infraestrutura PoE
 const POE_MODE = {
   NVR_INTEGRATED: 'nvr_poe',    // NVR com PoE embutido
   SWITCH_EXTERNAL: 'switch_poe', // Switch PoE + NVR sem PoE
   INDIVIDUAL:      'individual', // Fonte por câmera
 };
 
+// Tipo de cabo por tecnologia (output do TSR, não input)
 const CABLE_TYPE = {
-  IP_STANDARD:  { label: 'Cabo de Rede UTP Cat5e', sku: 'UTP-C5E', maxMeters: 100 },
-  IP_4K:        { label: 'Cabo de Rede UTP Cat6',  sku: 'UTP-C6',  maxMeters: 100 },
-  ANALOG_STD:   { label: 'Cabo Coaxial RG59',      sku: 'RG59',    maxMeters: 300 },
-  ANALOG_LONG:  { label: 'Cabo Coaxial RG6',       sku: 'RG6',     maxMeters: 500 },
+  IP_STANDARD:  { label: 'UTP Cat5e', maxMeters: 100, sku: 'UTP-C5E' },
+  IP_4K:        { label: 'UTP Cat6',  maxMeters: 100, sku: 'UTP-C6' },
+  ANALOG_STD:   { label: 'Coaxial RG59', maxMeters: 300, sku: 'RG59' },
+  ANALOG_LONG:  { label: 'Coaxial RG6',  maxMeters: 500, sku: 'RG6' },
 };
 
+// Bitrate médio por resolução (H.265, gravação contínua)
 const BITRATE_GBDAY = {
   '1MP':  5.0,
   '2MP':  9.0,

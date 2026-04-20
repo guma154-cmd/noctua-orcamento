@@ -12,22 +12,20 @@ function parseStorageToTB(input) {
   if (str.includes('GB')) return num / 1024;
   if (str.includes('TB')) return num;
   
-  // Se for só número > 10, assume GB (ex: 500)
-  if (num > 10) return num / 1024;
+  if (num > 10) return num / 1024; // Assume GB se for número alto sem unidade
   return num;
 }
 
 /**
  * Calcula estimativa média de dias de gravação.
- * SPRINT 1 - NOCTUA V5
  */
 function calcRetentionDays(hdCapacityRaw, numCameras, resolution) {
   const hd = parseStorageToTB(hdCapacityRaw);
   const cam = parseInt(numCameras);
   const res = resolution || '2MP';
-  
-  if (hd <= 0) return { days: null, error: 'HD_INVALIDO', message: 'Capacidade de HD inválida' };
-  if (cam <= 0) return { days: null, error: 'CAMERAS_INVALIDO', message: 'Quantidade de câmeras inválida' };
+
+  if (hd <= 0) return { days: null, error: 'HD_INVALIDO', message: 'HD inválido' };
+  if (cam <= 0) return { days: null, error: 'CAMERAS_INVALIDO', message: 'Câmeras inválido' };
 
   const bitrate     = BITRATE_GBDAY[res] ?? BITRATE_GBDAY['2MP'];
   const hdUsableGB  = (hd * 1024) * (1 - OVERHEAD_SISTEMA);
@@ -47,10 +45,11 @@ function calcRetentionDays(hdCapacityRaw, numCameras, resolution) {
  * Calcula o HD mínimo para atingir dias desejados (Modelo A).
  */
 function calcHDForDays(daysDesired, numCameras, resolution) {
-  const bitrate    = BITRATE_GBDAY[resolution] ?? BITRATE_GBDAY['2MP'];
+  const res = resolution || '2MP';
+  const bitrate    = BITRATE_GBDAY[res] ?? BITRATE_GBDAY['2MP'];
   const cam        = parseInt(numCameras) || 1;
   const days       = parseInt(daysDesired) || 15;
-  
+
   const consumoDia = bitrate * cam;
   const gbNeeded   = (consumoDia * days) / (1 - OVERHEAD_SISTEMA);
   const tbNeeded   = gbNeeded / 1024;
