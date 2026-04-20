@@ -410,7 +410,7 @@ const generateTechnicalPayload = async (session) => {
   const techType = mapTechType(session.system_type);
   const poeMode = mapPoEMode(session.poe_mode);
   const isIP = techType === TECH_TYPE.IP;
-  const resolution = "2MP"; // Default
+  const resolution = "2MP"; // Default simplificado para Noctua V5
 
   // 2. Seleção de Gravador e Switch (V5)
   const nvrResult = selectNVR(techType, cameraCount, poeMode);
@@ -423,16 +423,19 @@ const generateTechnicalPayload = async (session) => {
       const switchItem = await findItemWithFallback('Acessorio', nvrResult.switch, 520);
       scope.resolved_items.push({ ...switchItem, qtd: 1, categoria: 'Acessorio' });
       scope.network_topology = nvrResult.note;
+  } else {
+      scope.network_topology = isIP ? 'Câmeras conectadas diretamente no NVR (PoE Integrado)' : 'Câmeras conectadas diretamente no DVR';
   }
 
   // 3. Seleção de Cabo e Câmera (V5)
-  const maxDistance = scope.max_point_distance_m || 30; // Fallback distance
+  const maxDistance = scope.max_point_distance_m || 30;
   const cableResult = selectCable(techType, resolution, maxDistance);
   const cableItem = await findItemWithFallback('Cabo', cableResult.label, isIP ? 3.5 : 2.8);
   
   if (cableResult.alert) {
       scope.incompatibilities.push(`BLOCK_${cableResult.alert}`);
       scope.requires_human_review = true;
+      scope.waiting_human = true;
   }
 
   const cameraName = profile.base_camera[isIP ? 'ip' : 'analog'];

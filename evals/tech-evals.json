@@ -3,45 +3,39 @@
   "name": "Noctua Tech Stack Evals",
   "scenarios": [
     {
-      "id": "TECH_V5_001",
-      "description": "Cenário IP Puro com PoE Integrado",
-      "input": {
-        "budget_model": "A",
-        "system_type": "IP (Cabo de Rede)",
-        "poe_mode": "NVR com PoE integrado (Direto no gravador)",
-        "camera_quantity": "8"
-      },
-      "assertions": [
-        { "path": "selected_recorder.produto", "op": "contains", "value": "NVR 8 Canais POE" },
-        { "path": "resolved_items", "op": "none_match", "value": "Switch POE" }
-      ]
+      "id": "V001",
+      "description": "Pergunta de tecnologia aparece antes do TSR",
+      "assertion": "system_type field must be requested first"
     },
     {
-      "id": "TECH_V5_002",
-      "description": "Cenário IP com Switch Externo para Alta Escala",
-      "input": {
-        "budget_model": "A",
-        "system_type": "IP (Cabo de Rede)",
-        "poe_mode": "Switch PoE externo (Centralizado)",
-        "camera_quantity": "16"
-      },
-      "assertions": [
-        { "path": "selected_recorder.produto", "op": "contains", "value": "NVR 16 Canais IP" },
-        { "path": "resolved_items", "op": "any_match", "value": "Switch POE 16 Portas" }
-      ]
+      "id": "V005",
+      "description": "IP + NVR PoE + 4 câmeras",
+      "input": { "tech": "ip", "poe": "nvr_poe", "cameras": 4 },
+      "output": { "recorder": "NVR 4 Canais PoE", "switch": null }
     },
     {
-      "id": "TECH_V5_003",
-      "description": "Cenário Analógico Convencional",
-      "input": {
-        "budget_model": "A",
-        "system_type": "Analógica (Cabo Coaxial)",
-        "camera_quantity": "4"
-      },
-      "assertions": [
-        { "path": "selected_recorder.produto", "op": "contains", "value": "DVR 4 Canais Multi-HD" },
-        { "path": "resolved_items", "op": "any_match", "value": "Cabo Coaxial" }
-      ]
+      "id": "V008",
+      "description": "IP + Switch externo + 12 câmeras",
+      "input": { "tech": "ip", "poe": "switch_poe", "cameras": 12 },
+      "output": { "recorder": "NVR 16 Canais", "switch": "Switch PoE 16 portas" }
+    },
+    {
+      "id": "V012",
+      "description": "IP + 2MP + 80m",
+      "input": { "tech": "ip", "res": "2MP", "dist": 80 },
+      "output": { "cable": "UTP Cat5e", "alert": null }
+    },
+    {
+      "id": "V013",
+      "description": "IP + 2MP + 120m",
+      "input": { "tech": "ip", "res": "2MP", "dist": 120 },
+      "output": { "cable": "UTP Cat5e", "alert": "BLOCK_DISTÂNCIA_EXCEDIDA" }
+    },
+    {
+      "id": "V019",
+      "description": "Storage: 2TB, 8 câmeras 2MP",
+      "input": { "hd": 2, "cameras": 8, "res": "2MP" },
+      "output": { "min_days": 20, "max_days": 28 }
     }
   ]
 }

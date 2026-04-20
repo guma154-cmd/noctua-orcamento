@@ -19,6 +19,22 @@ const gerarRelatorioOperacional = (modelo, dados) => {
   const rawQty = escopo.quantidade || escopo.camera_quantity || 0;
   const qtdCameras = parseInt(rawQty) || 0;
 
+  // SEÇÃO: COMPOSIÇÃO TÉCNICA (V5)
+  let composiçãoTecnica = "══════════════════════════════════════\n🔧 COMPOSIÇÃO TÉCNICA\n══════════════════════════════════════\n";
+  if (escopo.technical_payload) {
+    const payload = escopo.technical_payload;
+    composiçãoTecnica += `Tecnologia:  ${(escopo.system_type || "Não definida").split(' ')[0]}\n`;
+    composiçãoTecnica += `Gravador:    ${payload.selected_recorder?.produto || "Não definido"}\n`;
+    composiçãoTecnica += `Câmeras:     ${qtdCameras} x ${payload.selected_camera?.produto || "Câmera Padrão"}\n`;
+    composiçãoTecnica += `Cabo:        ${payload.resolved_items.find(i => i.categoria === 'Cabo')?.produto || "Cabo Padrão"}\n`;
+    if (payload.network_topology) {
+        composiçãoTecnica += `Topologia:   ${payload.network_topology}\n`;
+    }
+  } else {
+    composiçãoTecnica += "Composição técnica não gerada automaticamente.\n";
+  }
+  composiçãoTecnica += "══════════════════════════════════════\n\n";
+
   // Tradução de Alertas do Sistema
   let alertasFormatados = "• Nenhum alerta técnico detectado.";
   if (escopo.technical_payload && escopo.technical_payload.incompatibilities.length > 0) {
@@ -89,7 +105,7 @@ const gerarRelatorioOperacional = (modelo, dados) => {
     .replace('{{valor_final}}', formatarMoeda(valorFinal))
     .replace('{{ticket_minimo_aplicado}}', financeiro.isTicketMinimo ? 'SIM (Ajustado para R$ 350,00)' : 'NÃO');
 
-  return relatorio + storageMessage;
+  return composiçãoTecnica + relatorio + storageMessage;
 };
 
 const calcularDadosFinanceiros = (escopo, materiais) => {
