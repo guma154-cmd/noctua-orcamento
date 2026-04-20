@@ -1,75 +1,48 @@
-const { BITRATE_GBDAY, OVERHEAD_SISTEMA } = require('../catalog/storage-constants');
+const { BITRATE_GBDAY, OVERHEAD_SISTEMA } = require("../catalog/technology-constants");
 
 /**
- * Funções de utilidade para tratamento de inputs
+ * Calcula estimativa média de dias de gravação.
+ * SPRINT 1 - NOCTUA V5
  */
-const parseCapacity = (input) => {
-    if (typeof input === 'number') return input;
-    if (!input) return 0;
-    
-    // Trata "2,5TB" -> 2.5 e "500GB" -> 0.5
-    let clean = input.toString().toLowerCase().replace(',', '.').trim();
-    
-    if (clean.includes('gb')) {
-        const val = parseFloat(clean.replace('gb', ''));
-        return isNaN(val) ? 0 : val / 1024;
-    }
-    
-    const val = parseFloat(clean.replace('tb', ''));
-    return isNaN(val) ? 0 : val;
-};
-
-/**
- * Calcula estimativa média de dias de gravação
- */
-function calcRetentionDays(hdCapacityTB_Input, numCameras, resolution) {
-  const hdCapacityTB = parseCapacity(hdCapacityTB_Input);
-
-  // Guards obrigatórios — nunca retornar NaN
-  if (!hdCapacityTB || isNaN(hdCapacityTB) || hdCapacityTB <= 0) {
-    return { days: null, error: 'HD não informado ou inválido' };
-  }
-  if (!numCameras || isNaN(numCameras) || numCameras <= 0) {
-    return { days: null, error: 'Número de câmeras inválido' };
-  }
+function calcRetentionDays(hdCapacityTB, numCameras, resolution) {
+  // Guards — nunca retornar NaN ou Infinity
+  const hdStr = String(hdCapacityTB || "0").replace(',', '.');
+  const hd  = parseFloat(hdStr);
+  const cam = parseInt(numCameras);
   
-  const resKey = resolution || '2MP';
-  const bitrate = BITRATE_GBDAY[resKey] ?? BITRATE_GBDAY['2MP'];
+  if (isNaN(hd)  || hd  <= 0) return { days: null, error: 'HD_INVALIDO', message: 'HD inválido' };
+  if (isNaN(cam) || cam <= 0) return { days: null, error: 'CAMERAS_INVALIDO', message: 'Quantidade de câmeras inválida' };
 
-  const hdUsableGB = (hdCapacityTB * 1024) * (1 - OVERHEAD_SISTEMA);
-  const consumoDiarioTotal = bitrate * numCameras;
-  
-  if (consumoDiarioTotal <= 0) return { days: null, error: 'Consumo inválido' };
-  
-  const days = Math.floor(hdUsableGB / consumoDiarioTotal);
+  const bitrate     = BITRATE_GBDAY[resolution] ?? BITRATE_GBDAY['2MP'];
+  const hdUsableGB  = (hd * 1024) * (1 - OVERHEAD_SISTEMA);
+  const consumoDia  = bitrate * cam;
+  const days        = Math.floor(hdUsableGB / consumoDia);
 
   return {
     days,
-    hdTB: hdCapacityTB,
-    cameras: numCameras,
-    resolution: resKey,
-    message: formatRetentionMessage(days, hdCapacityTB, numCameras)
+    hdTB: hd,
+    message: `📼 ESTIMATIVA DE GRAVAÇÃO\nHD: ${hd}TB | Câmeras: ${cam} × ${resolution}\nRetenção média estimada: ~${days} dias\n_(H.265, gravação contínua)_`
   };
 }
 
-function formatRetentionMessage(days, hdTB, cameras) {
-  if (days === null) return `📼 ESTIMATIVA DE GRAVAÇÃO\nHD não informado — estimativa indisponível.`;
+/**
+ * Calcula o HD mínimo para atingir dias desejados (Modelo A).
+ */
+function calcHDForDays(daysDesired, numCameras, resolution) {
+  const bitrate    = BITRATE_GBDAY[resolution] ?? BITRATE_GBDAY['2MP'];
+  const cam        = parseInt(numCameras) || 1;
+  const days       = parseInt(daysDesired) || 15;
   
-  const hdLabel = hdTB >= 1 ? `${hdTB}TB` : `${Math.round(hdTB * 1024)}GB`;
-  return [
-    `📼 ESTIMATIVA DE GRAVAÇÃO`,
-    `HD: ${hdLabel} | Câmeras: ${cameras}`,
-    ``,
-    `Retenção média estimada: *${days} dias*`,
-    `_(gravação contínua, H.265, movimentação moderada)_`,
-    ``,
-    `⚠️ Ambientes com muito movimento podem reduzir`,
-    `este tempo. Ambientes estáticos podem aumentar.`
-  ].join('\n');
+  const consumoDia = bitrate * cam;
+  const gbNeeded   = (consumoDia * days) / (1 - OVERHEAD_SISTEMA);
+  const tbNeeded   = gbNeeded / 1024;
+
+  if (tbNeeded <= 1)  return 'HD 1TB SkyHawk';
+  if (tbNeeded <= 2)  return 'HD 2TB SkyHawk';
+  if (tbNeeded <= 4)  return 'HD 4TB SkyHawk';
+  if (tbNeeded <= 6)  return 'HD 6TB SkyHawk';
+  if (tbNeeded <= 8)  return 'HD 8TB SkyHawk';
+  return 'HD 10TB SkyHawk';
 }
 
-module.exports = {
-  calcRetentionDays,
-  formatRetentionMessage,
-  parseCapacity
-};
+module.exports = { calcRetentionDays, calcHDForDays };
