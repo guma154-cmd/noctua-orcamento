@@ -570,10 +570,48 @@ const acessorios = [];
     acessorios.push({ ...conectorP4, qtd: cameraCount, categoria: 'Acessorio' });
   }
 
-  if (session.material_source && session.material_source.includes('Cliente')) {
+  // REGRA DE OURO: SOBREPOSIÇÃO DE MODELO DE FORNECIMENTO (SPRINT 4)
+  const isModeloB = session.budget_model === 'B';
+  const isModeloC = session.budget_model === 'C';
+
+  const shouldClientSupply = (categoria) => {
+    if (isModeloB) return true;
+    if (isModeloC) {
+      if (categoria === 'Camera' && session.source_cameras?.includes('Cliente')) return true;
+      if (categoria === 'Recorder' && session.source_recorder?.includes('Cliente')) return true;
+      if (categoria === 'Cabo' && session.source_cables?.includes('Cliente')) return true;
+      if (categoria === 'Acessorio' && session.source_cables?.includes('Cliente')) return true; // Acessórios seguem os cabos
+      if (categoria === 'Infra' && session.source_infra?.includes('Cliente')) return true;
+      if (categoria === 'HD' && session.recording?.includes('possuo')) return true; // Compatibilidade legada
+    }
+    return false;
+  };
+
+  scope.resolved_items = [
+    ...scope.selected_recorders.map(r => ({ ...r, qtd: 1, categoria: 'Recorder' })),
+    { ...scope.selected_camera, qtd: cameraCount, categoria: 'Camera' },
+    { ...scope.selected_hd, qtd: scope.selected_recorders.length, categoria: 'HD' },
+    ...acessorios
+  ];
+
+  // Aplicar Custo Zero para itens do Cliente
+  scope.resolved_items = scope.resolved_items.map(item => {
+    if (shouldClientSupply(item.categoria)) {
+      return { ...item, preco_custo: 0, supplied_by: 'Cliente' };
+    }
+    return { ...item, supplied_by: 'NOCTUA' };
+  });
+
+  if (session.material_source && session.material_source.includes('Cliente') && !isModeloB) {
     scope.incompatibilities.push('REVIEW_CLIENT_MATERIAL');
-    scope.requires_human_review = true; // REGRA CRÍTICA: Sempre trava se material for do cliente
-    scope.waiting_human = true;          // Força aguardar revisão
+    scope.requires_human_review = true;
+    scope.waiting_human = true;
+  }
+
+  // No Modelo B, não trava revisão por material (é esperado que seja do cliente)
+  if (isModeloB) {
+      scope.requires_human_review = false;
+      scope.waiting_human = false;
   }
 
   if (session.installation_environment === 'Misto' || infraStatus.includes('parcial')) {
@@ -588,14 +626,6 @@ const acessorios = [];
     scope.operational_flags.high_complexity = true;
     scope.requires_human_review = true; // Projetos > 16 câmeras sempre pedem revisão
   }
-
-
-  scope.resolved_items = [
-    ...scope.selected_recorders.map(r => ({ ...r, qtd: 1, categoria: 'Recorder' })),
-    { ...scope.selected_camera, qtd: cameraCount, categoria: 'Camera' },
-    { ...scope.selected_hd, qtd: scope.selected_recorders.length, categoria: 'HD' }, // 1 HD por gravador físico
-    ...acessorios
-  ];
 
   scope.operational_flags.high_complexity = cameraCount > 8 || infraStatus.includes('não');
   scope.operational_flags.needs_ladder = scope.external_count > 0 || infraStatus.includes('não');

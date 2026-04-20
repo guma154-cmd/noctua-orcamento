@@ -48,7 +48,8 @@ const gerarRelatorioOperacional = (modelo, dados) => {
 
     itens.forEach(item => {
       const custoTotal = (item.qtd * item.custo);
-      listaItens.push(`• ${item.nome} — ${item.qtd} x ${formatarMoeda(item.custo)} = ${formatarMoeda(custoTotal)}`);
+      const origin = item.supplied_by === 'Cliente' ? ' (Cliente)' : '';
+      listaItens.push(`• ${item.nome}${origin} — ${item.qtd} x ${formatarMoeda(item.custo)} = ${formatarMoeda(custoTotal)}`);
     });
     
     if (cabo && cabo.qtd_compra > cabo.qtd) {

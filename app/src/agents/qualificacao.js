@@ -131,6 +131,34 @@ const QUESTION_FAMILIES = {
     prompt: "Incluir treinamento de uso para o cliente?",
     condition: (estado) => estado.budget_model === 'B'
   },
+  category_allocation_cameras: {
+    label: 'responsável pelas câmeras',
+    fields: ['source_cameras'],
+    options: ['NOCTUA fornece', 'Cliente fornece'],
+    prompt: "No Modelo Misto, quem fornece as Câmeras?",
+    condition: (estado) => estado.budget_model === 'C'
+  },
+  category_allocation_recorder: {
+    label: 'responsável pelo gravador',
+    fields: ['source_recorder'],
+    options: ['NOCTUA fornece', 'Cliente fornece'],
+    prompt: "Quem fornece o Gravador (DVR/NVR)?",
+    condition: (estado) => estado.budget_model === 'C'
+  },
+  category_allocation_cables: {
+    label: 'responsável pelos cabos',
+    fields: ['source_cables'],
+    options: ['NOCTUA fornece', 'Cliente fornece'],
+    prompt: "Quem fornece os Cabos e Conectores?",
+    condition: (estado) => estado.budget_model === 'C'
+  },
+  category_allocation_infra: {
+    label: 'responsável pela infra',
+    fields: ['source_infra'],
+    options: ['NOCTUA fornece', 'Cliente fornece'],
+    prompt: "Quem fornece a Infraestrutura (Eletrodutos, caixas)?",
+    condition: (estado) => estado.budget_model === 'C'
+  },
   client_name: {
     label: 'nome do cliente',
     fields: ['client_name'],
