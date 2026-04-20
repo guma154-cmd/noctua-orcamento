@@ -1,5 +1,5 @@
 const { db } = require("../db/sqlite");
-const { TEMPLATE_CANONICO_MODELO_A, TEMPLATE_CANONICO_MODELO_B, TEMPLATE_RELATORIO_OPERACIONAL } = require("../templates/propostas");
+const { TEMPLATE_CANONICO_MODELO_A, TEMPLATE_CANONICO_MODELO_B, TEMPLATE_CANONICO_MODELO_C, TEMPLATE_RELATORIO_OPERACIONAL } = require("../templates/propostas");
 const { translate } = require("../utils/operational_messages");
 
 /**
@@ -45,43 +45,37 @@ const gerarRelatorioOperacional = (modelo, dados) => {
     }).join('\n\n');
   }
 
+  const { camera, dvr, hd, acessorios, cabo, infra } = financeiro.detalhes;
   const listaItens = [];
-  if (modelo === 'B') {
-    const { camera, dvr, hd, acessorios, cabo } = financeiro.detalhes;
-    const infraItems = escopo.technical_payload ? escopo.technical_payload.resolved_items.filter(i => i.categoria === 'Infra') : [];
 
-    const itens = [
-      { nome: camera.produto, qtd: qtdCameras, custo: parseFloat(camera.preco_custo) || 0 },
-      { nome: dvr.produto, qtd: 1, custo: parseFloat(dvr.preco_custo) || 0 },
-      { nome: hd.produto, qtd: 1, custo: parseFloat(hd.preco_custo) || 0 },
-      ...(acessorios || []).map(a => ({ nome: a.produto, qtd: parseFloat(a.qtd) || 0, custo: parseFloat(a.preco_custo) || 0 })),
-      ...infraItems.map(i => ({ nome: i.produto, qtd: parseFloat(i.qtd) || 0, custo: parseFloat(i.preco_custo) || 0 }))
-    ];
+  const addToList = (item, qtd) => {
+    if (!item) return;
+    const origin = item.supplied_by === 'Cliente fornece' ? ' (CLIENTE)' : '';
+    const valorItem = item.supplied_by === 'Cliente fornece' ? 'R$ 0,00' : formatarMoeda(item.preco_custo);
+    const custoTotal = item.supplied_by === 'Cliente fornece' ? 0 : (qtd * (parseFloat(item.preco_custo) || 0));
+    listaItens.push(`• ${item.produto}${origin} — ${qtd} x ${valorItem} = ${formatarMoeda(custoTotal)}`);
+  };
 
-    if (cabo) {
-      itens.push({ nome: cabo.produto, qtd: parseFloat(cabo.qtd) || 0, custo: parseFloat(cabo.preco_custo) || 0 });
-    }
+  addToList(camera, qtdCameras);
+  addToList(dvr, 1);
+  addToList(hd, 1);
+  (acessorios || []).forEach(a => addToList(a, a.qtd));
+  if (cabo) addToList(cabo, cabo.qtd);
+  (infra || []).forEach(i => addToList(i, i.qtd));
 
-    itens.forEach(item => {
-      const custoTotal = (item.qtd * item.custo);
-      const origin = item.supplied_by === 'Cliente' ? ' (Cliente)' : '';
-      listaItens.push(`• ${item.nome}${origin} — ${item.qtd} x ${formatarMoeda(item.custo)} = ${formatarMoeda(custoTotal)}`);
-    });
-    
-    if (cabo && cabo.qtd_compra > cabo.qtd) {
-      listaItens.push(`_Nota: Arredondar para ${cabo.qtd_compra}m para compra._`);
-    }
-
-    if (escopo.technical_payload && escopo.technical_payload.backbone_meterage > 0) {
-      listaItens.push(`_Nota Técnica: Inclui ${escopo.technical_payload.backbone_meterage}m de cabo para backbone entre switches._`);
-    }
-  } else {
-    listaItens.push("• (Material fornecido pelo cliente)");
+  if (cabo && cabo.qtd_compra > cabo.qtd && cabo.supplied_by !== 'Cliente fornece') {
+    listaItens.push(`_Nota: Arredondar para ${cabo.qtd_compra}m para compra._`);
   }
 
-  const subtotalMateriais = modelo === 'A' ? formatarMoeda(financeiro.custoMaterial) : "R$ 0,00";
-  const valorFinal = modelo === 'A' ? financeiro.valorCompleto : financeiro.valorMDO;
+  const subtotalMateriais = formatarMoeda(financeiro.custoMaterial);
+  const valorFinal = modelo === 'B' ? financeiro.valorMDO : financeiro.valorCompleto;
   
+  const labelsModelo = {
+      'A': 'Modelo A (Fornecimento Completo)',
+      'B': 'Modelo B (Mão de Obra Pura)',
+      'C': 'Modelo C (Fornecimento Misto)'
+  };
+
   // SEÇÃO: ESTIMATIVA DE GRAVAÇÃO (V5)
   let storageMessage = "\n══════════════════════════════════════\n";
   const retention = escopo.technical_payload?.retention_estimate;
@@ -97,7 +91,7 @@ const gerarRelatorioOperacional = (modelo, dados) => {
     .replace('{{orcamento_id}}', orcamento_id)
     .replace('{{cliente_nome}}', escopo.nome_cliente || 'Rafael')
     .replace('{{alertas_sistema}}', alertasFormatados)
-    .replace('{{modelo_gerado}}', modelo === 'A' ? 'Modelo A (Fornecimento Completo)' : 'Modelo B (Mão de Obra)')
+    .replace('{{modelo_gerado}}', labelsModelo[modelo] || labelsModelo[escopo.budget_model] || 'Modelo Personalizado')
     .replace('{{lista_materiais}}', listaItens.join('\n'))
     .replace('{{subtotal_materiais}}', subtotalMateriais)
     .replace('{{mao_obra_instalacao}}', formatarMoeda(financeiro.custoInstalacao))
@@ -125,42 +119,68 @@ const calcularDadosFinanceiros = (escopo, materiais) => {
     hd = materiais.find(r => r.produto.toLowerCase().includes('hd')) || { preco_custo: 300, produto: 'HD 1TB' };
   }
   
-  const custoAcessorios = acessorios.reduce((acc, a) => acc + ((parseFloat(a.preco_custo) || 0) * (parseFloat(a.qtd) || 0)), 0);
+  // Função auxiliar para determinar fonte por categoria
+  const getSource = (category) => {
+    if (escopo.budget_model === 'A') return 'NOCTUA fornece';
+    if (escopo.budget_model === 'B') return 'Cliente fornece';
+    if (category === 'Camera') return escopo.source_cameras || 'NOCTUA fornece';
+    if (category === 'Recorder') return escopo.source_recorder || 'NOCTUA fornece';
+    if (category === 'Cabo') return escopo.source_cables || 'NOCTUA fornece';
+    if (category === 'Infra') return escopo.source_infra || 'NOCTUA fornece';
+    if (category === 'HD') return (escopo.recording_required === 'Já possuo o HD' || escopo.source_recorder === 'Cliente fornece') ? 'Cliente fornece' : 'NOCTUA fornece';
+    return 'NOCTUA fornece';
+  };
+
+  const isClient = (cat) => getSource(cat) === 'Cliente fornece';
+
+  const custoAcessorios = acessorios.reduce((acc, a) => {
+    // Acessórios seguem a fonte das Câmeras por padrão
+    if (isClient('Camera')) return acc;
+    return acc + ((parseFloat(a.preco_custo) || 0) * (parseFloat(a.qtd) || 0));
+  }, 0);
   
   // Regra de Infraestrutura
   let custoInfra = 0;
+  let infraItems = [];
   if (escopo.technical_payload) {
-    const infraItems = escopo.technical_payload.resolved_items.filter(i => i.categoria === 'Infra');
-    custoInfra = infraItems.reduce((acc, i) => acc + ((parseFloat(i.preco_custo) || 0) * (parseFloat(i.qtd) || 0)), 0);
+    infraItems = escopo.technical_payload.resolved_items.filter(i => i.categoria === 'Infra');
+    if (!isClient('Infra')) {
+        custoInfra = infraItems.reduce((acc, i) => acc + ((parseFloat(i.preco_custo) || 0) * (parseFloat(i.qtd) || 0)), 0);
+    }
   }
 
-  // Regra de Cabos Comercial NOCTUA
+  // Regra de Cabos
   let custoCabo = 0;
   let caboItem = null;
   const estimatedCable = escopo.technical_payload ? parseFloat(escopo.technical_payload.estimated_cable_total_m) || 0 : 0;
 
   if (estimatedCable > 0) {
     const payload = escopo.technical_payload;
-    const metragem = estimatedCable;
-    
-    // O cabo já vem resolvido do TSR com o preço correto (do banco ou fallback)
     const caboResolvido = payload.resolved_items.find(i => i.categoria === 'Cabo');
     
     if (caboResolvido) {
       const precoMetro = parseFloat(caboResolvido.preco_custo) || 0;
-      const metragemCompra = Math.ceil(metragem / 10) * 10;
-      custoCabo = metragem * precoMetro;
+      const metragemCompra = Math.ceil(estimatedCable / 10) * 10;
+      if (!isClient('Cabo')) {
+          custoCabo = estimatedCable * precoMetro;
+      }
       caboItem = { 
         ...caboResolvido,
-        qtd: metragem, 
+        qtd: estimatedCable, 
         qtd_compra: metragemCompra,
-        is_box: metragem > 250
+        is_box: estimatedCable > 250,
+        supplied_by: getSource('Cabo')
       };
     }
   }
 
-  // 1. CÁLCULO DE MÃO DE OBRA POR COMPLEXIDADE (MODELO B)
-  const complexityBase = 150; // Preço base por ponto
+  // Marcar outros itens com fonte
+  camera.supplied_by = getSource('Camera');
+  dvr.supplied_by = getSource('Recorder');
+  hd.supplied_by = getSource('HD');
+
+  // 1. CÁLCULO DE MÃO DE OBRA POR COMPLEXIDADE
+  const complexityBase = 150; 
   const factors = {
     installation: { 'Parede normal': 0, 'Teto': 30, 'Altura > 3m': 80, 'Fachada': 150 },
     path: { 'Embutida existente': 0, 'Calha/Eletroduto': 40, 'Sobreposta': 20, 'Requer quebra de alvenaria': 120 }
@@ -185,15 +205,16 @@ const calcularDadosFinanceiros = (escopo, materiais) => {
   const custoInstalacaoEfetivo = valorMDO / fatorMarkup;
 
   // 2. CÁLCULO DE MATERIAL (MODELO A / C)
-  const custoMaterial = ((parseFloat(camera.preco_custo) || 0) * qtdCameras) + 
-                        (parseFloat(dvr.preco_custo) || 0) + 
-                        (parseFloat(hd.preco_custo) || 0) + 
-                        custoAcessorios + custoCabo + custoInfra;
+  let custoMaterialTotal = 0;
+  if (!isClient('Camera')) custoMaterialTotal += (parseFloat(camera.preco_custo) || 0) * qtdCameras;
+  if (!isClient('Recorder')) custoMaterialTotal += (parseFloat(dvr.preco_custo) || 0);
+  if (!isClient('HD')) custoMaterialTotal += (parseFloat(hd.preco_custo) || 0);
+  custoMaterialTotal += custoAcessorios + custoCabo + custoInfra;
 
-  const valorCompleto = (custoMaterial + custoInstalacaoEfetivo) * fatorMarkup;
+  const valorCompleto = (custoMaterialTotal + custoInstalacaoEfetivo) * fatorMarkup;
 
   return {
-    custoMaterial: isNaN(custoMaterial) ? 0 : custoMaterial,
+    custoMaterial: isNaN(custoMaterialTotal) ? 0 : custoMaterialTotal,
     custoInstalacao: isNaN(custoInstalacaoEfetivo) ? 0 : custoInstalacaoEfetivo,
     valorMDO: isNaN(valorMDO) ? 0 : valorMDO,
     valorCompleto: isNaN(valorCompleto) ? 0 : valorCompleto,
@@ -202,13 +223,21 @@ const calcularDadosFinanceiros = (escopo, materiais) => {
       camera,
       dvr,
       hd,
-      acessorios,
-      cabo: caboItem
+      acessorios: acessorios.map(a => ({ ...a, supplied_by: getSource('Camera') })),
+      cabo: caboItem,
+      infra: infraItems.map(i => ({ ...i, supplied_by: getSource('Infra') }))
     }
   };
 };
 
 const renderizarProposta = (modelo, dados) => {
+  const templates = {
+    'A': TEMPLATE_CANONICO_MODELO_A,
+    'B': TEMPLATE_CANONICO_MODELO_B,
+    'C': TEMPLATE_CANONICO_MODELO_C
+  };
+  
+  const template = templates[modelo] || TEMPLATE_CANONICO_MODELO_A;
   const valorMDO = formatarMoeda(dados.financeiro.valorMDO);
   const valorCompleto = formatarMoeda(dados.financeiro.valorCompleto);
   const { camera, dvr, hd } = dados.financeiro.detalhes;
@@ -219,7 +248,7 @@ const renderizarProposta = (modelo, dados) => {
 
   let texto = template
     .replace('{{cliente_nome}}', dados.escopo.nome_cliente || 'Cliente')
-    .replace('{{local_instalacao}}', dados.escopo.perfil || 'Não informado')
+    .replace('{{local_instalacao}}', dados.escopo.perfil || dados.escopo.property_type || 'Não informado')
     .replace('{{data_orcamento}}', new Date().toLocaleDateString('pt-BR'))
     .replace('{{orcamento_id}}', dados.orcamento_id)
     .replace('{{quantidade_cameras}}', `${qtdNum} ${labelCameras}`)
@@ -231,8 +260,9 @@ const renderizarProposta = (modelo, dados) => {
     .replace('{{periodo_gravacao}}', (dados.escopo.technical_payload && dados.escopo.technical_payload.retention_estimate && !dados.escopo.technical_payload.retention_estimate.error) 
         ? `${dados.escopo.technical_payload.retention_estimate.days} dias` 
         : `${dados.escopo.recording_days || 15} dias`)
-    .replace('{{valor_modelo_a}}', valorCompleto) // NOVO PADRÃO: A = COMPLETO
-    .replace('{{valor_modelo_b}}', valorMDO)      // NOVO PADRÃO: B = MDO
+    .replace('{{valor_modelo_a}}', valorCompleto)
+    .replace('{{valor_modelo_b}}', valorMDO)
+    .replace('{{valor_modelo_c}}', valorCompleto) // No modelo C, valorCompleto já desconta itens do cliente
     .replace('{{forma_pagamento}}', 'A combinar (Pix / Cartão)')
     .replace(/{{linha_extra_.*?}}/g, '');
 
@@ -252,7 +282,8 @@ const calcularOrcamento = async (escopo, orcamento_id) => {
         financeiro,
         propostas: {
           modelo_a: renderizarProposta('A', { escopo, orcamento_id, financeiro }),
-          modelo_b: renderizarProposta('B', { escopo, orcamento_id, financeiro })
+          modelo_b: renderizarProposta('B', { escopo, orcamento_id, financeiro }),
+          modelo_c: renderizarProposta('C', { escopo, orcamento_id, financeiro })
         }
       };
 

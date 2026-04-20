@@ -15,6 +15,13 @@ const QUESTION_FAMILIES = {
     ],
     prompt: "🦉 NOCTUA — Novo Orçamento\nQual o modelo deste projeto?"
   },
+  property_type: {
+    label: 'tipo de imóvel',
+    fields: ['property_type'],
+    options: ['Casa', 'Apartamento', 'Comércio', 'Condomínio', 'Outro'],
+    prompt: "🏠 TIPO DE IMÓVEL\nOnde será a instalação?",
+    condition: (estado) => true
+  },
   system_type: {
     label: 'tecnologia',
     fields: ['system_type'],
@@ -186,6 +193,10 @@ const getDefaultState = () => ({
   remote_view: null,
   budget_model: null,
   material_source: null,
+  source_cameras: null,
+  source_recorder: null,
+  source_cables: null,
+  source_infra: null,
   answered_families: [],
   last_question_family: null,
   meta: {
@@ -295,10 +306,10 @@ const resolvePendingAnswer = (text, family) => {
   }
 
   if (family === 'budget_model') {
-      if (clean === '1' || lower.includes('modelo a') || lower.includes('completo')) return 'A';
-      if (clean === '2' || lower.includes('modelo b') || lower.includes('obra')) return 'B';
-      if (clean === '3' || lower.includes('modelo c') || lower.includes('misto')) return 'C';
-      if (lower === 'a' || lower === 'b' || lower === 'c') return lower.toUpperCase();
+      if (lowerText === '1' || lowerText.includes('modelo a') || lowerText.includes('completo')) return 'A';
+      if (lowerText === '2' || lowerText.includes('modelo b') || lowerText.includes('obra')) return 'B';
+      if (lowerText === '3' || lowerText.includes('modelo c') || lowerText.includes('misto')) return 'C';
+      if (lowerText === 'a' || lowerText === 'b' || lowerText === 'c') return lowerText.toUpperCase();
   }
 
   return null;
@@ -356,6 +367,13 @@ const atualizarEstado = async (texto, estadoAtual) => {
     if (resolved && resolved !== 'WAIT_FOR_MANUAL') {
       const field = QUESTION_FAMILIES[estadoAtual.last_question_family].fields[0];
       estadoAtual[field] = resolved;
+
+      // Sincronização automática para Modelos A e B
+      if (field === 'budget_model') {
+        if (resolved === 'A') estadoAtual.material_source = 'NOCTUA fornece';
+        if (resolved === 'B') estadoAtual.material_source = 'Cliente fornece';
+      }
+
       if (!estadoAtual.answered_families.includes(estadoAtual.last_question_family)) {
         estadoAtual.answered_families.push(estadoAtual.last_question_family);
       }
