@@ -15,19 +15,45 @@ const QUESTION_FAMILIES = {
     ],
     prompt: "🦉 NOCTUA — Novo Orçamento\nQual o modelo deste projeto?"
   },
-  property_type: {
-    label: 'tipo de local',
-    fields: ['property_type'],
-    options: ['Casa', 'Apartamento', 'Comércio', 'Condomínio', 'Outro'],
-    keywords: ['casa', 'apartamento', 'comércio', 'loja', 'residência', 'prédio', 'comercio', 'residencia', 'predio'],
-    prompt: "Qual o tipo de local?"
+  system_type: {
+    label: 'tecnologia',
+    fields: ['system_type'],
+    options: ['IP (Cabo de Rede)', 'Analógica (Cabo Coaxial)', 'Híbrida (Existente + Nova)'],
+    keywords: ['ip', 'digital', 'cvi', 'tvi', 'ahd', 'híbrida', 'hibrida', 'analógica', 'analogica', 'rede'],
+    prompt: "🔧 TIPO DE TECNOLOGIA\nQual a tecnologia das câmeras deste projeto?",
+    condition: (estado) => true // Essencial
+  },
+  poe_mode: {
+    label: 'PoE',
+    fields: ['poe_mode'],
+    options: [
+      'NVR com PoE integrado (Direto no gravador)', 
+      'Switch PoE externo (Centralizado)', 
+      'Fonte individual por câmera'
+    ],
+    prompt: "⚡ INFRAESTRUTURA PoE\nComo as câmeras serão alimentadas?",
+    condition: (estado) => (estado.system_type || "").toLowerCase().includes('ip')
+  },
+  retrofit: {
+    label: 'retrofit',
+    fields: ['retrofit_coax'],
+    options: ['Sim', 'Não'],
+    prompt: "📡 CABEAMENTO EXISTENTE\nExiste cabo coaxial (RG59/RG6) já instalado que deseja reaproveitar?",
+    condition: (estado) => (estado.system_type || "").toLowerCase().includes('analóg') || (estado.system_type || "").toLowerCase().includes('híbrid')
+  },
+  ip_over_coax: {
+    label: 'IP over Coax',
+    fields: ['use_eoc'],
+    options: ['Sim, incluir tecnologia EoC', 'Não, manter convencional'],
+    prompt: "💡 SUGESTÃO TÉCNICA\nExiste tecnologia que permite rodar câmeras IP em cabo coaxial existente (EoC). Isso evita nova passagem de cabo. Deseja incluir esta opção?",
+    condition: (estado) => estado.retrofit_coax === 'Sim'
   },
   camera_quantity: {
     label: 'quantidade de câmeras',
     fields: ['camera_quantity'],
     options: ['4 câmeras', '8 câmeras', '16 câmeras', '32 câmeras', 'Outra quantidade'],
     prompt: "Quantas câmeras seriam?",
-    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
+    condition: (estado) => true
   },
   installation_environment: {
     label: 'ambiente de instalação',
@@ -35,15 +61,7 @@ const QUESTION_FAMILIES = {
     options: ['Interno', 'Externo', 'Misto'],
     keywords: ['interno', 'externo', 'misto', 'dentro', 'fora', 'rua'],
     prompt: "O ambiente é:",
-    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
-  },
-  system_type: {
-    label: 'tipo de sistema',
-    fields: ['system_type'],
-    options: ['IP (Digital)', 'Analógico (HD)', 'Ainda não sei'],
-    keywords: ['ip', 'digital', 'analógico', 'analogico', 'hd'],
-    prompt: "Qual tecnologia prefere?",
-    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
+    condition: (estado) => true
   },
   recording: {
     label: 'gravação',
@@ -51,7 +69,7 @@ const QUESTION_FAMILIES = {
     options: ['Sim', 'Não', 'Já possuo o HD', 'Não sabe (Verificar)'],
     keywords: ['sim', 'não', 'gravar', 'gravação', 'dvr', 'nvr', 'hd', 'possuo', 'tenho', 'sabe', 'verificar'],
     prompt: "O sistema terá gravação?",
-    condition: (estado) => true // Sempre pergunta
+    condition: (estado) => true 
   },
   recording_days: {
     label: 'dias de gravação',
@@ -60,7 +78,6 @@ const QUESTION_FAMILIES = {
     prompt: "Quantos dias de gravação deseja manter?",
     condition: (estado) => {
         if (estado.recording_required !== 'Sim') return false;
-        // Só pergunta dias se a NOCTUA for fornecer o HD (Modelos A ou C)
         if (estado.budget_model === 'A') return true;
         if (estado.budget_model === 'C' && estado.source_recorder?.includes('NOCTUA')) return true;
         return false;
@@ -73,7 +90,6 @@ const QUESTION_FAMILIES = {
     prompt: "Qual a capacidade do HD do cliente?",
     condition: (estado) => {
         if (estado.recording_required === 'Não') return false;
-        // Pergunta capacidade se o cliente fornecer (Model B, Model C ou "Já possuo")
         if (estado.recording_required?.includes('possuo')) return true;
         if (estado.budget_model === 'B' && estado.recording_required === 'Sim') return true;
         if (estado.budget_model === 'C' && estado.source_recorder?.includes('Cliente') && estado.recording_required === 'Sim') return true;
@@ -86,63 +102,21 @@ const QUESTION_FAMILIES = {
     options: ['Sim', 'Não', 'Ainda não sei'],
     keywords: ['celular', 'app', 'remoto', 'internet'],
     prompt: "Vai precisar acessar pelo celular?",
-    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
-  },
-  material_source: {
-    label: 'material',
-    fields: ['material_source'],
-    options: ['Cliente fornece', 'NOCTUA fornece', 'Parcial / Não definido'],
-    keywords: ['cliente', 'noctua', 'nós', 'eu'],
-    prompt: "Quem vai fornecer o material?",
-    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
-  },
-  labor_camera_points: {
-    label: 'pontos de câmera',
-    fields: ['camera_quantity'],
-    prompt: "Quantos pontos de câmera seriam para instalar?",
-    condition: (estado) => estado.budget_model === 'B'
-  },
-  equipment_acquired: {
-    label: 'equipamentos adquiridos',
-    fields: ['equipment_status'],
-    options: ['Sim, já tenho tudo', 'Não, ainda vou comprar'],
-    prompt: "Os equipamentos já estão adquiridos?",
-    condition: (estado) => estado.budget_model === 'B'
+    condition: (estado) => true
   },
   installation_type: {
     label: 'tipo de instalação',
     fields: ['installation_complexity'],
     options: ['Parede normal', 'Teto', 'Altura > 3m', 'Fachada'],
     prompt: "Qual o tipo de instalação predominante?",
-    condition: (estado) => estado.budget_model === 'B'
+    condition: (estado) => true
   },
   cable_path_type: {
     label: 'passagem de cabo',
     fields: ['cable_path_complexity'],
     options: ['Embutida existente', 'Calha/Eletroduto', 'Sobreposta', 'Requer quebra de alvenaria'],
     prompt: "Como será a passagem do cabeamento?",
-    condition: (estado) => estado.budget_model === 'B'
-  },
-  reuse_cabling: {
-    label: 'reaproveitamento',
-    fields: ['reuse_cabling'],
-    options: ['Sim, aproveitar atual', 'Não, lançar tudo novo'],
-    prompt: "Existe cabeamento existente a reaproveitar?",
-    condition: (estado) => estado.budget_model === 'B'
-  },
-  config_remote: {
-    label: 'configuração remota',
-    fields: ['include_remote_config'],
-    options: ['Sim', 'Não'],
-    prompt: "Incluir configuração de acesso remoto?",
-    condition: (estado) => estado.budget_model === 'B'
-  },
-  training_included: {
-    label: 'treinamento',
-    fields: ['include_training'],
-    options: ['Sim', 'Não'],
-    prompt: "Incluir treinamento de uso para o cliente?",
-    condition: (estado) => estado.budget_model === 'B'
+    condition: (estado) => true
   },
   category_allocation_cameras: {
     label: 'responsável pelas câmeras',
@@ -203,6 +177,9 @@ const getDefaultState = () => ({
   camera_quantity: null,
   installation_environment: null,
   system_type: null,
+  poe_mode: null,
+  retrofit_coax: null,
+  use_eoc: null,
   recording_required: null,
   recording_days: null,
   client_hd_gb: null,
@@ -399,7 +376,10 @@ const atualizarEstado = async (texto, estadoAtual) => {
   Campos: property_type (Casa/Apartamento/Comércio/Condomínio/Outro), 
           camera_quantity (número), 
           installation_environment (Interno/Externo/Misto), 
-          system_type (IP (Digital)/Analógico (HD)/Ainda não sei), 
+          system_type (IP (Cabo de Rede)/Analógica (Cabo Coaxial)/Híbrida (Existente + Nova)),
+          poe_mode (NVR com PoE integrado (Direto no gravador)/Switch PoE externo (Centralizado)/Fonte individual por câmera),
+          retrofit_coax (Sim/Não),
+          use_eoc (Sim, incluir tecnologia EoC/Não, manter convencional),
           recording_required (Sim/Não/Já possuo o HD), 
           recording_days (número de dias),
           client_hd_gb (tamanho em GB),
@@ -409,8 +389,10 @@ const atualizarEstado = async (texto, estadoAtual) => {
           client_phone (telefone).
           
   IMPORTANTE: 
-  - Se o usuário falar "digital", "rede", "poe", classifique system_type como "IP (Digital)".
-  - Se o usuário falar "hd", "coaxial", "cvi", "tvi", classifique system_type como "Analógico (HD)".
+  - "digital", "rede", "UTP", "RJ45" -> system_type: "IP (Cabo de Rede)".
+  - "coaxial", "cvi", "tvi", "balun" -> system_type: "Analógica (Cabo Coaxial)".
+  - "nvr poe", "direto no nvr" -> poe_mode: "NVR com PoE integrado (Direto no gravador)".
+  - "switch", "switch poe" -> poe_mode: "Switch PoE externo (Centralizado)".
   
   Retorne APENAS o JSON puro.`;
 
