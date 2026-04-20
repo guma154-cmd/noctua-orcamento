@@ -66,6 +66,17 @@ const gerarRelatorioOperacional = (modelo, dados) => {
   const subtotalMateriais = modelo === 'A' ? formatarMoeda(financeiro.custoMaterial) : "R$ 0,00";
   const valorFinal = modelo === 'A' ? financeiro.valorCompleto : financeiro.valorMDO;
   
+  // SEÇÃO: ESTIMATIVA DE GRAVAÇÃO (V5)
+  let storageMessage = "\n══════════════════════════════════════\n";
+  const retention = escopo.technical_payload?.retention_estimate;
+  
+  if (retention && !retention.error) {
+    storageMessage += retention.message;
+  } else {
+    storageMessage += `📼 ESTIMATIVA DE GRAVAÇÃO\nHD não informado — estimativa indisponível.\nSolicite ao cliente a capacidade do HD para\ncalcular o tempo de gravação.`;
+  }
+  storageMessage += "\n══════════════════════════════════════\n";
+
   let relatorio = TEMPLATE_RELATORIO_OPERACIONAL
     .replace('{{orcamento_id}}', orcamento_id)
     .replace('{{cliente_nome}}', escopo.nome_cliente || 'Rafael')
@@ -78,7 +89,7 @@ const gerarRelatorioOperacional = (modelo, dados) => {
     .replace('{{valor_final}}', formatarMoeda(valorFinal))
     .replace('{{ticket_minimo_aplicado}}', financeiro.isTicketMinimo ? 'SIM (Ajustado para R$ 350,00)' : 'NÃO');
 
-  return relatorio;
+  return relatorio + storageMessage;
 };
 
 const calcularDadosFinanceiros = (escopo, materiais) => {
@@ -201,7 +212,9 @@ const renderizarProposta = (modelo, dados) => {
     .replace('{{descricao_gravador}}', dvr.produto)
     .replace('{{quantidade_hd}}', '1 unidade')
     .replace('{{descricao_hd}}', hd.produto)
-    .replace('{{periodo_gravacao}}', dados.escopo.technical_payload && dados.escopo.technical_payload.retention_days_estimate ? `${dados.escopo.technical_payload.retention_days_estimate} dias (Baseado no HD do cliente)` : `${dados.escopo.recording_days || 15} dias (Dimensionamento Noctua)`)
+    .replace('{{periodo_gravacao}}', (dados.escopo.technical_payload && dados.escopo.technical_payload.retention_estimate && !dados.escopo.technical_payload.retention_estimate.error) 
+        ? `${dados.escopo.technical_payload.retention_estimate.days} dias` 
+        : `${dados.escopo.recording_days || 15} dias`)
     .replace('{{valor_modelo_a}}', valorCompleto) // NOVO PADRÃO: A = COMPLETO
     .replace('{{valor_modelo_b}}', valorMDO)      // NOVO PADRÃO: B = MDO
     .replace('{{forma_pagamento}}', 'A combinar (Pix / Cartão)')

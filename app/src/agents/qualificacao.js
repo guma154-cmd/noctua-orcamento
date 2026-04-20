@@ -48,24 +48,37 @@ const QUESTION_FAMILIES = {
   recording: {
     label: 'gravação',
     fields: ['recording_required'],
-    options: ['Sim', 'Não', 'Já possuo o HD', 'Ainda não sei'],
-    keywords: ['sim', 'não', 'gravar', 'gravação', 'dvr', 'nvr', 'hd', 'possuo', 'tenho'],
-    prompt: "Vai precisar de gravação?",
-    condition: (estado) => estado.budget_model === 'A' || estado.budget_model === 'C'
+    options: ['Sim', 'Não', 'Já possuo o HD', 'Não sabe (Verificar)'],
+    keywords: ['sim', 'não', 'gravar', 'gravação', 'dvr', 'nvr', 'hd', 'possuo', 'tenho', 'sabe', 'verificar'],
+    prompt: "O sistema terá gravação?",
+    condition: (estado) => true // Sempre pergunta
   },
   recording_days: {
     label: 'dias de gravação',
     fields: ['recording_days'],
     options: ['7 dias (Econômico)', '15 dias (Padrão)', '30 dias (Segurança Máxima)', 'Outro (Personalizado)'],
     prompt: "Quantos dias de gravação deseja manter?",
-    condition: (estado) => estado.recording_required === 'Sim'
+    condition: (estado) => {
+        if (estado.recording_required !== 'Sim') return false;
+        // Só pergunta dias se a NOCTUA for fornecer o HD (Modelos A ou C)
+        if (estado.budget_model === 'A') return true;
+        if (estado.budget_model === 'C' && estado.source_recorder?.includes('NOCTUA')) return true;
+        return false;
+    }
   },
   client_hd_size: {
     label: 'tamanho do HD',
     fields: ['client_hd_gb'],
-    options: ['500 GB', '1 TB', '2 TB', '4 TB', '8 TB', 'Outro tamanho'],
-    prompt: "Qual o tamanho desse HD que o cliente possui?",
-    condition: (estado) => estado.recording_required && estado.recording_required.toLowerCase().includes('possuo')
+    options: ['500 GB', '1 TB', '2 TB', '4 TB', 'Outro tamanho'],
+    prompt: "Qual a capacidade do HD do cliente?",
+    condition: (estado) => {
+        if (estado.recording_required === 'Não') return false;
+        // Pergunta capacidade se o cliente fornecer (Model B, Model C ou "Já possuo")
+        if (estado.recording_required?.includes('possuo')) return true;
+        if (estado.budget_model === 'B' && estado.recording_required === 'Sim') return true;
+        if (estado.budget_model === 'C' && estado.source_recorder?.includes('Cliente') && estado.recording_required === 'Sim') return true;
+        return false;
+    }
   },
   remote_access: {
     label: 'acesso remoto',
@@ -191,6 +204,8 @@ const getDefaultState = () => ({
   installation_environment: null,
   system_type: null,
   recording_required: null,
+  recording_days: null,
+  client_hd_gb: null,
   remote_view: null,
   budget_model: null,
   material_source: null,
@@ -279,27 +294,27 @@ const resolvePendingAnswer = (text, family) => {
     }
   }
 
-  if (questionId === 'client_hd_size') {
-      const match = lower.match(/(\d+)\s*(t|g)/);
+  if (family === 'client_hd_size') {
+      const lower = text.toLowerCase();
+      const match = lower.match(/(\d+([.,]\d+)?)\s*(t|g)/);
       if (match) {
-          const val = parseInt(match[1]);
-          const unit = match[2];
-          if (unit === 't') return (val * 1000).toString();
-          return val.toString();
+          let val = parseFloat(match[1].replace(',', '.'));
+          const unit = match[3];
+          if (unit === 't') return val.toString(); // Internamente o TSR e orcamento vão usar TB agora
+          return (val / 1024).toFixed(3); // Converte GB para TB e salva
       }
-      if (clean === '1') return '500';
-      if (clean === '2') return '1000';
-      if (clean === '3') return '2000';
-      if (clean === '4') return '4000';
-      if (clean === '5') return '8000';
+      if (lower.includes('500')) return '0.5';
+      if (lower.includes('1')) return '1';
+      if (lower.includes('2')) return '2';
+      if (lower.includes('4')) return '4';
   }
 
-  if (questionId === 'recording_days') {
-      const daysNum = parseInt(clean);
-      if (!isNaN(daysNum)) return daysNum.toString();
-      if (clean === '1' || lower.includes('7')) return '7';
-      if (clean === '2' || lower.includes('15')) return '15';
-      if (clean === '3' || lower.includes('30')) return '30';
+  if (family === 'recording_days') {
+      const daysNum = parseInt(lowerText);
+      if (!isNaN(daysNum) && daysNum > 50) return daysNum.toString(); // Números grandes -> dias
+      if (lowerText === '1' || lowerText.includes('7')) return '7';
+      if (lowerText === '2' || lowerText.includes('15')) return '15';
+      if (lowerText === '3' || lowerText.includes('30')) return '30';
   }
 
   if (family === 'budget_model') {

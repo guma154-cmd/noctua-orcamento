@@ -1,4 +1,6 @@
 const { db } = require("../db/sqlite");
+const { BITRATE_GBDAY, OVERHEAD_SISTEMA } = require("../catalog/storage-constants");
+const { calcRetentionDays } = require("../utils/storage-calculator");
 
 /**
  * TECHNICAL SCOPE RESOLVER - NOCTUA V4 (INFRA MODULE READY)
@@ -253,31 +255,55 @@ const findItemWithFallback = async (category, searchName, defaultPrice, options 
 };
 
 /**
- * Calculadora de Storage NOCTUA
+ * Calculadora de Storage NOCTUA (V5 - SPRINT 5)
  */
-const calculateStorage = async (scope, cameraCount, isIP) => {
-  const days = parseInt(scope.recording_days) || 15;
-  // Regra Conservadora (H.265): 15GB/dia (Analog), 25GB/dia (IP)
-  const gbPerDay = isIP ? 25 : 15;
-  const totalGB = cameraCount * days * gbPerDay;
-
-  // Mapa de Capacidades Disponíveis
-  const capacities = [
-    { label: 'HD 1TB SkyHawk', gb: 1000, price: 300 },
-    { label: 'HD 2TB SkyHawk', gb: 2000, price: 450 },
-    { label: 'HD 4TB SkyHawk', gb: 4000, price: 750 },
-    { label: 'HD 8TB SkyHawk', gb: 8000, price: 1400 }
-  ];
-
-  const selected = capacities.find(c => c.gb >= totalGB) || capacities[capacities.length - 1];
+const calculateStorage = async (scope, cameraCount, isIP, session) => {
+  const resolution = session.system_type?.includes('IP') ? '2MP' : '2MP'; // Fallback ou extraído
   
-  if (totalGB > 8000) {
-    scope.incompatibilities.push('REVIEW_STORAGE_ABOVE_STANDARD');
-    scope.requires_human_review = true;
-    scope.waiting_human = true;
+  // SEÇÃO: CLIENTE FORNECE HD (B / C)
+  const isClientSupplied = session.recording_required?.toLowerCase().includes('possuo') || 
+                           (session.budget_model === 'B' && session.recording_required === 'Sim') ||
+                           (session.budget_model === 'C' && session.source_recorder?.includes('Cliente'));
+
+  if (isClientSupplied) {
+    const hdCapacity = session.client_hd_gb || 0; // Guardado como TB no state
+    const result = calcRetentionDays(hdCapacity, cameraCount, resolution);
+    
+    scope.retention_estimate = result;
+    
+    // Retorna um item HD genérico com custo 0
+    return { 
+      sku: 'HD-CLIENTE', 
+      produto: `HD ${hdCapacity >= 1 ? hdCapacity + 'TB' : (hdCapacity * 1024) + 'GB'} (Cliente)`, 
+      preco_custo: 0, 
+      categoria: 'HD',
+      supplied_by: 'Cliente'
+    };
   }
 
-  return await findItemWithFallback('HD', selected.label, selected.price);
+  // SEÇÃO: NOCTUA FORNECE HD (A / C)
+  const targetDays = parseInt(session.recording_days) || 15;
+  const bitrate = BITRATE_GBDAY[resolution] ?? BITRATE_GBDAY['2MP'];
+  const consumoDiario = bitrate * cameraCount;
+  const gbNecessario = (consumoDiario * targetDays) / (1 - OVERHEAD_SISTEMA);
+  const tbRequired = gbNecessario / 1024;
+
+  let hdLabel = 'HD 1TB SkyHawk';
+  let defaultPrice = 350;
+
+  if (tbRequired <= 1) { hdLabel = 'HD 1TB SkyHawk'; defaultPrice = 350; }
+  else if (tbRequired <= 2) { hdLabel = 'HD 2TB SkyHawk'; defaultPrice = 520; }
+  else if (tbRequired <= 4) { hdLabel = 'HD 4TB SkyHawk'; defaultPrice = 850; }
+  else if (tbRequired <= 8) { hdLabel = 'HD 8TB SkyHawk'; defaultPrice = 1600; }
+  else { hdLabel = 'HD 10TB SkyHawk'; defaultPrice = 2200; }
+
+  const hdItem = await findItemWithFallback('HD', hdLabel, defaultPrice);
+  
+  // Calcula retenção real do HD selecionado para o relatório
+  const hdTB = parseFloat(hdItem.produto.match(/(\d+)TB/)?.[1] || 1);
+  scope.retention_estimate = calcRetentionDays(hdTB, cameraCount, resolution);
+
+  return hdItem;
 };
 
 const calculateCables = (scope, cameraCount) => {
@@ -430,23 +456,13 @@ if (scope.selected_camera.sku === 'BLOCK') {
   scope.incompatibilities.push('BLOCK_CATALOG_CRITICAL_MISSING');
 }
 
-  // Storage Dimensionado
-  scope.selected_hd = await calculateStorage(scope, cameraCount, isIP);
+  // Storage Dimensionado (SPRINT 5)
+  scope.selected_hd = await calculateStorage(scope, cameraCount, isIP, session);
   
-  // REGRA: HD FORNECIDO PELO CLIENTE (CÁLCULO DE DIAS)
-  if (session.recording_required && session.recording_required.toLowerCase().includes('possuo')) {
-    scope.selected_hd.preco_custo = 0;
-    scope.selected_hd.produto += " (Fornecido pelo cliente)";
-    
-    // Cálculo do Período Estimado
-    const hdGB = parseInt(scope.client_hd_gb) || 0;
-    if (hdGB > 0) {
-      const gbPerDay = isIP ? 25 : 15;
-      scope.retention_days_estimate = Math.floor(hdGB / (cameraCount * gbPerDay));
-      if (!scope.incompatibilities.includes('ALERT_CLIENT_MATERIAL_HD')) {
-        scope.incompatibilities.push('ALERT_CLIENT_MATERIAL_HD');
-      }
-    }
+  if (scope.retention_estimate?.error) {
+      scope.incompatibilities.push('ALERT_STORAGE_ESTIMATE_FAILED');
+  } else if (scope.selected_hd.supplied_by === 'Cliente') {
+      scope.incompatibilities.push('ALERT_CLIENT_MATERIAL_HD');
   }
 
 const acessorios = [];
