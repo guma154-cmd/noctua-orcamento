@@ -8,6 +8,9 @@ const memoria = require('./agents/memoria');
 const qualificacao = require('./agents/qualificacao');
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+bot.catch((err, ctx) => {
+  console.error(`[Global Error] Error for ${ctx.updateType}:`, err);
+});
 
 initDb().then(() => console.log('AIOX-Ready Database Initialized.'));
 
@@ -109,9 +112,20 @@ const handleTelegramInteraction = async (ctx) => {
 /**
  * HANDLER PARA BOTÕES INLINE
  */
+// Proteção contra Double-Click (Local memory)
+const lastClicks = new Map();
+
 bot.on('callback_query', async (ctx) => {
   const data = ctx.callbackQuery.data;
   const chatId = ctx.from.id;
+
+  // Prevenção de Double-click (Idempotência básica)
+  const now = Date.now();
+  const last = lastClicks.get(chatId);
+  if (last && last.data === data && (now - last.time < 1000)) {
+      return ctx.answerCbQuery("Processando... aguarde.");
+  }
+  lastClicks.set(chatId, { data, time: now });
 
   try {
     // 1. Feedback visual imediato e limpeza do menu clicado
@@ -137,22 +151,57 @@ bot.on('callback_query', async (ctx) => {
       return;
     }
 
-    // 2. Mapeamento de cliques do menu principal (se necessário)
+    // 2. Mapeamento de cliques do menu principal
     if (data.startsWith('menu:')) {
       const action = data.split(':')[1];
-      const textMap = { novo_orcamento: 'novo_orcamento', continuar_orcamento: 'continuar_orcamento', salvar_cotacao: 'salvar_cotacao', consultar: 'consultar', limpar: 'limpar', main: 'menu' };
+      const textMap = { 
+        novo_orcamento: 'novo_orcamento', 
+        continuar_orcamento: 'continuar_orcamento', 
+        salvar_cotacao: 'salvar_cotacao', 
+        consultar: 'consultar', 
+        limpar: 'limpar', 
+        main: 'menu' 
+      };
       const result = await dialogueEngine.process(chatId, { text: textMap[action] || action, type: 'text' });
       return sendResult(ctx, result);
     }
 
-    // 3. Clique em pergunta de qualificação (prefixo q: ou texto puro do botão)
-    const rawAction = data.includes(':') ? data.split(':')[1] : data;
-    const result = await dialogueEngine.process(chatId, { text: rawAction, type: 'text' });
+    // 3. Encaminhamento resiliente para o DialogueEngine
+    // Passamos o 'data' completo para preservar prefixos (ex: confirm_quote:ID), 
+    // permitindo que o Engine decida como tratar.
+    const result = await dialogueEngine.process(chatId, { text: data, type: 'text' });
     return sendResult(ctx, result);
 
   } catch (err) {
     console.error("[Callback Error]:", err);
   }
+});
+
+bot.command('cancelar', async (ctx) => {
+  const result = await dialogueEngine.process(ctx.from.id, { text: 'reset', type: 'text' });
+  return sendResult(ctx, result);
+});
+
+bot.command('status', async (ctx) => {
+  const chatId = ctx.from.id;
+  const session = await memoria.buscarSessao(chatId);
+  if (!session || !session.flow_status || session.flow_status === 'idle') {
+    return ctx.reply("ℹ️ Nenhuma sessão ativa no momento. Use /start para começar.");
+  }
+
+  const respondidos = session.answered_families ? session.answered_families.length : 0;
+  const total = Object.keys(qualificacao.QUESTION_FAMILIES).length;
+  const porcentagem = Math.round((respondidos / total) * 100);
+
+  let statusMsg = `📊 *Status da Sessão*\n\n`;
+  statusMsg += `👤 Operador: ${session.operator_name || 'Rafael'}\n`;
+  statusMsg += `📍 Etapa: ${session.flow_status.toUpperCase()}\n`;
+  statusMsg += `📝 Progresso: ${respondidos}/${total} (${porcentagem}%)\n`;
+  if (session.meta && session.meta.draft_id) {
+    statusMsg += `🆔 Orçamento: \`${session.meta.draft_id}\`\n`;
+  }
+
+  return ctx.reply(statusMsg, { parse_mode: 'Markdown' });
 });
 
 bot.command('alertas', async (ctx) => {
@@ -209,7 +258,7 @@ bot.on(['message', 'photo', 'document', 'voice'], async (ctx) => {
 });
 
 console.log('Bot AIOX Architecture Active with Queue System!');
-bot.launch().catch((err) => console.error('Falha ao iniciar o bot:', err));
+bot.launch({ dropPendingUpdates: true }).catch((err) => console.error('Falha ao iniciar o bot:', err));
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));

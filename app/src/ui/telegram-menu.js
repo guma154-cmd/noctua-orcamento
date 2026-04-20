@@ -46,6 +46,8 @@ const BTN = {
   NAO:               { text: '❌ Não, descartar',          callback_data: 'confirm:nao' },
 
   // Navegação
+  VOLTAR:            { text: '⬅ Voltar',               callback_data: 'menu:voltar' },
+  MENU:              { text: '🏠 Menu',                 callback_data: 'menu:main' },
   VOLTAR_MENU:       { text: '🏠 Menu Principal',          callback_data: 'menu:main' },
 };
 
@@ -63,7 +65,7 @@ const LINHAS = {
   modelo:          [BTN.MODELO_A, BTN.MODELO_B, BTN.MODELO_AMBOS],
   confirmacao:     [BTN.SIM, BTN.NAO],
   confirmacao_reset: [BTN.RESET_SIM, BTN.RESET_NAO],
-  voltar:          [BTN.VOLTAR_MENU],
+  voltar:          [BTN.VOLTAR, BTN.MENU],
 };
 
 // ────────────────────────
@@ -148,7 +150,7 @@ const menuRevisaoCotacao = (draftId, extraido) => {
 
   const keyboard = Markup.inlineKeyboard([
     [BTN.CONFIRMAR_COT(draftId), BTN.EDITAR_NOME_COT(draftId)],
-    [BTN.CANCELAR_COT(draftId), BTN.VOLTAR_MENU],
+    [BTN.CANCELAR_COT(draftId), BTN.MENU],
   ]);
 
   // Nota: parse_mode omitido intencionalmente para evitar falha de Markdown
@@ -192,11 +194,8 @@ const menuOpcoes = (header, opcoes) => {
     buttons.push(row);
   }
 
-  // Linha de navegação
-  buttons.push([
-    { text: '⬅ Voltar', callback_data: 'menu:voltar' },
-    { text: '🏠 Menu', callback_data: 'menu:main' }
-  ]);
+  // Linha de navegação (Sempre presente)
+  buttons.push(LINHAS.voltar);
 
   const keyboard = Markup.inlineKeyboard(buttons);
   return { text: header, keyboard, parse_mode: 'Markdown' };
@@ -213,7 +212,8 @@ const menuRevisaoImportacao = (newId) => {
         [{ text: "1. Importar Tudo (Com Alertas)", callback_data: "1. Importar Tudo (Com Alertas)" }],
         [{ text: "2. Apenas Itens Confiáveis", callback_data: "2. Apenas Itens Confiáveis" }],
         [{ text: "3. Marcar para Revisão Manual", callback_data: "3. Marcar para Revisão Manual" }],
-        [{ text: "4. Cancelar Importação", callback_data: "4. Cancelar Importação" }]
+        [{ text: "4. Cancelar Importação", callback_data: "4. Cancelar Importação" }],
+        LINHAS.voltar
     ]);
 
     return { 
@@ -221,6 +221,24 @@ const menuRevisaoImportacao = (newId) => {
         keyboard: keyboard,
         parse_mode: 'Markdown'
     };
+};
+
+/**
+ * Menu de revisão final do orçamento (Pós-TSR/Cálculo)
+ */
+const menuRevisaoOrcamento = (resumo) => {
+  const header = `📊 *RESUMO DO ORÇAMENTO [${resumo.orcamento_id}]*\n\n` + 
+                 `${resumo.relatorio_interno}\n\n` +
+                 `Escolha uma opção para gerar a proposta final:`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [{ text: '🔧 Só Mão de Obra (A)', callback_data: 'model:A' }],
+    [{ text: '📦 Material + MDO (B)', callback_data: 'model:B' }],
+    [{ text: '📊 Relatório Completo (Ambos)', callback_data: 'model:ambos' }],
+    LINHAS.voltar
+  ]);
+
+  return { text: header, keyboard, parse_mode: 'Markdown' };
 };
 
 /**
@@ -243,5 +261,6 @@ module.exports = {
   menuConfirmacao,
   menuOpcoes,
   menuRevisaoImportacao,
-  menuConfirmacaoReset
+  menuConfirmacaoReset,
+  menuRevisaoOrcamento
 };

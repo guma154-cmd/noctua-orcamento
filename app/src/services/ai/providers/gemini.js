@@ -11,7 +11,7 @@ class GeminiProvider {
   async execute(prompt, systemInstruction = "", modelOverride = null) {
     if (!this.apiKey) throw new Error("GEMINI_API_KEY não configurada");
 
-    const genAI = new GoogleGenerativeAI(this.apiKey);
+    const genAI = new GoogleGenerativeAI(this.apiKey, { apiVersion: "v1" });
     const model = genAI.getGenerativeModel({ model: modelOverride || this.modelName });
     
     const result = await model.generateContent(
@@ -25,7 +25,7 @@ class GeminiProvider {
     if (!this.apiKey) throw new Error("GEMINI_API_KEY não configurada");
 
     const fs = require("fs");
-    const genAI = new GoogleGenerativeAI(this.apiKey);
+    const genAI = new GoogleGenerativeAI(this.apiKey, { apiVersion: "v1" });
     const model = genAI.getGenerativeModel({ model: modelOverride || this.modelName });
     const fileData = fs.readFileSync(filePath);
 

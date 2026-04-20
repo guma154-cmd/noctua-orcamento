@@ -184,6 +184,7 @@ const renderizarProposta = (modelo, dados) => {
     .replace('{{descricao_gravador}}', dvr.produto)
     .replace('{{quantidade_hd}}', '1 unidade')
     .replace('{{descricao_hd}}', hd.produto)
+    .replace('{{periodo_gravacao}}', dados.escopo.technical_payload && dados.escopo.technical_payload.retention_days_estimate ? `${dados.escopo.technical_payload.retention_days_estimate} dias (Baseado no HD do cliente)` : `${dados.escopo.recording_days || 15} dias (Dimensionamento Noctua)`)
     .replace('{{valor_modelo_a}}', valor)
     .replace('{{valor_modelo_b}}', valor)
     .replace('{{forma_pagamento}}', 'A combinar (Pix / Cartão)')

@@ -35,9 +35,23 @@ const QUESTION_FAMILIES = {
   recording: {
     label: 'gravação',
     fields: ['recording_required'],
-    options: ['Sim', 'Não', 'Ainda não sei'],
-    keywords: ['sim', 'não', 'gravar', 'gravação', 'dvr', 'nvr'],
+    options: ['Sim', 'Não', 'Já possuo o HD', 'Ainda não sei'],
+    keywords: ['sim', 'não', 'gravar', 'gravação', 'dvr', 'nvr', 'hd', 'possuo', 'tenho'],
     prompt: "Vai precisar de gravação?"
+  },
+  recording_days: {
+    label: 'dias de gravação',
+    fields: ['recording_days'],
+    options: ['7 dias (Econômico)', '15 dias (Padrão)', '30 dias (Segurança Máxima)', 'Outro (Personalizado)'],
+    prompt: "Quantos dias de gravação deseja manter?",
+    condition: (estado) => estado.recording_required === 'Sim'
+  },
+  client_hd_size: {
+    label: 'tamanho do HD',
+    fields: ['client_hd_gb'],
+    options: ['500 GB', '1 TB', '2 TB', '4 TB', '8 TB', 'Outro tamanho'],
+    prompt: "Qual o tamanho desse HD que o cliente possui?",
+    condition: (estado) => estado.recording_required && estado.recording_required.toLowerCase().includes('possuo')
   },
   remote_access: {
     label: 'acesso remoto',
@@ -172,6 +186,29 @@ const resolvePendingAnswer = (text, family) => {
     }
   }
 
+  if (questionId === 'client_hd_size') {
+      const match = lower.match(/(\d+)\s*(t|g)/);
+      if (match) {
+          const val = parseInt(match[1]);
+          const unit = match[2];
+          if (unit === 't') return (val * 1000).toString();
+          return val.toString();
+      }
+      if (clean === '1') return '500';
+      if (clean === '2') return '1000';
+      if (clean === '3') return '2000';
+      if (clean === '4') return '4000';
+      if (clean === '5') return '8000';
+  }
+
+  if (questionId === 'recording_days') {
+      const daysNum = parseInt(clean);
+      if (!isNaN(daysNum)) return daysNum.toString();
+      if (clean === '1' || lower.includes('7')) return '7';
+      if (clean === '2' || lower.includes('15')) return '15';
+      if (clean === '3' || lower.includes('30')) return '30';
+  }
+
   return null;
 };
 
@@ -184,7 +221,7 @@ const classifyIncomingMessage = async (text, estado) => {
   if (isTechnicalData) return 'answer_pending';
 
   // Se for comando de controle, retorna control_command p/ Engine tratar
-  if (localResult.is_reset || localResult.is_greeting || clean.includes('limpar') || clean.includes('reset')) return 'control_command';
+  if (localResult.is_reset || localResult.is_greeting || clean.includes('limpar') || clean.includes('reset') || clean === 'menu' || clean === '/start' || clean === '/cancelar') return 'control_command';
 
   // Se houver pendência, priorizar a resolução da resposta antes de classificar nova intenção
   if (estado.last_question_family) {
@@ -198,8 +235,15 @@ const classifyIncomingMessage = async (text, estado) => {
     - budget_reset: Resetar, limpar, apagar a conversa, começar do zero, esquecer tudo.
     - smalltalk: Conversa casual ou saudações.
     Retorne apenas uma destas palavras chaves.`;
-  const result = await askGemini(text, systemInstruction);
-  console.log(`[Intent-Router] Input: "${text}" -> IA Result: "${result}"`);
+  
+  let result;
+  try {
+    result = await askGemini(text, systemInstruction);
+    console.log(`[Intent-Router] Input: "${text}" -> IA Result: "${result}"`);
+  } catch (err) {
+    console.error(`[Intent-Router Error]: Falha no Gemini: ${err.message}`);
+    result = null;
+  }
   
   if (!result) return localResult.intent || 'unknown';
   
@@ -241,7 +285,9 @@ const atualizarEstado = async (texto, estadoAtual) => {
           camera_quantity (número), 
           installation_environment (Interno/Externo/Misto), 
           system_type (IP (Digital)/Analógico (HD)/Ainda não sei), 
-          recording_required (Sim/Não), 
+          recording_required (Sim/Não/Já possuo o HD), 
+          recording_days (número de dias),
+          client_hd_gb (tamanho em GB),
           remote_view (Sim/Não), 
           material_source (Cliente fornece/NOCTUA fornece),
           client_address (endereço),
@@ -287,10 +333,10 @@ const atualizarEstado = async (texto, estadoAtual) => {
     }
   }
 
-  // 3. Sincronizar families respondidas (Garantia de Fluxo)
+  // 3. Sincronizar families respondidas (Garantia de Fluxo como PILHA)
   Object.keys(QUESTION_FAMILIES).forEach(fam => {
     const fields = QUESTION_FAMILIES[fam].fields;
-    const isCompleted = fields.every(f => estadoAtual[f] !== undefined && estadoAtual[f] !== null);
+    const isCompleted = fields.every(f => estadoAtual[f] !== undefined && estadoAtual[f] !== null && estadoAtual[f] !== "");
     if (isCompleted) {
       if (!estadoAtual.answered_families.includes(fam)) {
         estadoAtual.answered_families.push(fam);
@@ -299,6 +345,9 @@ const atualizarEstado = async (texto, estadoAtual) => {
       if (estadoAtual.last_question_family === fam) {
         estadoAtual.last_question_family = null;
       }
+    } else {
+        // Se por algum motivo o campo foi zerado, remove da pilha
+        estadoAtual.answered_families = estadoAtual.answered_families.filter(f => f !== fam);
     }
   });
 
@@ -307,7 +356,20 @@ const atualizarEstado = async (texto, estadoAtual) => {
 
 const decidirProximaAção = async (estado, intent) => {
   const familias = Object.keys(QUESTION_FAMILIES);
-  const pendente = familias.find(f => !estado.answered_families.includes(f));
+  const pendente = familias.find(f => {
+    const config = QUESTION_FAMILIES[f];
+    const jaRespondida = estado.answered_families.includes(f);
+    if (jaRespondida) return false;
+    
+    // Se houver condição, avalia se deve perguntar
+    if (config.condition && !config.condition(estado)) {
+      // Se a condição falhar, marca como respondida (pulada) para não travar
+      if (!estado.answered_families.includes(f)) estado.answered_families.push(f);
+      return false;
+    }
+    
+    return true;
+  });
 
   const budgetIdPrefix = estado.meta && estado.meta.draft_id ? `[${estado.meta.draft_id}] ` : "";
 
@@ -321,11 +383,15 @@ const decidirProximaAção = async (estado, intent) => {
   const config = QUESTION_FAMILIES[pendente];
   
   let menu = `${budgetIdPrefix}${config.prompt}`;
+  
+  // Garantia: Sempre retorna botões de navegação, mesmo que a pergunta seja de texto livre
+  const options = config.options || [];
+
   return { 
     action: 'ask_field', 
     text: menu.trim(), 
     family: pendente,
-    options: config.options || null
+    options: options.length > 0 ? options : null // DialogueEngine deve tratar null enviando teclado de navegação
   };
 };
 

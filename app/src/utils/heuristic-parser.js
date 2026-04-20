@@ -44,8 +44,12 @@ const parseLocal = (text) => {
   if (HEURISTICS.control.menu.test(lowerText)) result.is_greeting = true;
 
   // 2. Detectar seleção numérica pura
-  const numMatch = cleanText.match(/^(\d+)$/);
-  if (numMatch) result.numeric_selection = parseInt(numMatch[1]);
+  const numMatch = cleanText.match(/^(\d+)(?:[,\.](\d+))?$/);
+  if (numMatch) {
+    const intPart = numMatch[1];
+    const decPart = numMatch[2] || "0";
+    result.numeric_selection = parseFloat(`${intPart}.${decPart}`);
+  }
 
   // 3. Detectar ID
   const idMatch = cleanText.match(HEURISTICS.short_id);

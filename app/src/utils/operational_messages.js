@@ -110,6 +110,18 @@ const MESSAGES = {
     title: 'SISTEMA COM MÚLTIPLOS GRAVADORES',
     message: 'A quantidade de câmeras exige mais de um gravador físico.',
     recommended_action: 'Validar a distribuição das câmeras entre os gravadores no local.'
+  },
+  'ALERT_CLIENT_MATERIAL_HD': {
+    severity: SEVERITY.ALERT,
+    title: 'HD FORNECIDO PELO CLIENTE',
+    message: 'O custo do armazenamento foi zerado pois o cliente já possui o HD.',
+    recommended_action: 'Verificar a saúde do HD do cliente para evitar falhas de gravação futuras.'
+  },
+  'ALERT_CLIENT_MATERIAL_INFRA': {
+    severity: SEVERITY.ALERT,
+    title: 'INFRAESTRUTURA FORNECIDA PELO CLIENTE',
+    message: 'O custo de tubulação e PVC foi zerado conforme solicitado.',
+    recommended_action: 'Garantir que a tubulação do cliente comporte o volume de cabos do novo projeto.'
   }
 };
 

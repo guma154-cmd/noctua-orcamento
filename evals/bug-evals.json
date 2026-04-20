@@ -1,0 +1,22 @@
+[
+  { "id": "B001", "description": "Cálculo de mão de obra retorna número válido para cenário: 8 câmeras, Modelo A, sem material", "priority": 1 },
+  { "id": "B002", "description": "Cálculo de mão de obra retorna número válido para cenário: 1 câmera, Modelo A", "priority": 1 },
+  { "id": "B003", "description": "Cálculo de mão de obra retorna número válido para cenário: 32 câmeras, Modelo B", "priority": 1 },
+  { "id": "B004", "description": "Input undefined na variável de base não produz NaN (deve retornar erro explícito ou valor padrão)", "priority": 2 },
+  { "id": "B005", "description": "Input string vazia na variável de base não produz NaN", "priority": 2 },
+  { "id": "B006", "description": "1-4 câmeras → NVR 4 Canais selecionado", "priority": 1 },
+  { "id": "B007", "description": "5-8 câmeras → NVR 8 Canais selecionado", "priority": 1 },
+  { "id": "B008", "description": "9-16 câmeras → NVR 16 Canais selecionado", "priority": 1 },
+  { "id": "B009", "description": "17-32 câmeras → NVR 32 Canais selecionado", "priority": 1 },
+  { "id": "B010", "description": "33+ câmeras → múltiplos gravadores + alerta", "priority": 1 },
+  { "id": "B011", "description": "Alerta CRITICAL exibe mensagem de bloqueio ao operador", "priority": 1 },
+  { "id": "B012", "description": "Orçamento com CRITICAL não é entregue sem confirmação", "priority": 1 },
+  { "id": "B013", "description": "Operador pode confirmar ou cancelar após alerta CRITICAL", "priority": 2 },
+  { "id": "B014", "description": "Cancelamento de CRITICAL volta ao estado anterior", "priority": 2 },
+  { "id": "B015", "description": "Log registra qual CRITICAL foi confirmado e por quem", "priority": 3 },
+  { "id": "B016", "description": "Template não duplica a palavra 'câmeras'", "priority": 1 },
+  { "id": "B017", "description": "Template não duplica nenhuma palavra de tipo de câmera", "priority": 2 },
+  { "id": "B018", "description": "Interpolação de variáveis no template não produz '[object Object]' ou 'undefined'", "priority": 2 },
+  { "id": "B019", "description": "8 câmeras IP Full HD → storage calculado ≥ 1TB para retenção padrão (validar fórmula)", "priority": 2 },
+  { "id": "B020", "description": "Resultado do storage é exibido no relatório", "priority": 2 }
+]

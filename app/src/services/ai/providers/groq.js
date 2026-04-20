@@ -72,7 +72,10 @@ class GroqProvider {
 
     const FormData = require("form-data");
     const form = new FormData();
-    form.append("file", fs.createReadStream(filePath));
+    form.append("file", fs.createReadStream(filePath), { 
+      filename: 'audio.ogg', 
+      contentType: 'audio/ogg' 
+    });
     form.append("model", this.audioModel);
 
     const response = await axios.post("https://api.groq.com/openai/v1/audio/transcriptions", form, {

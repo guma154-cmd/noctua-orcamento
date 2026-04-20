@@ -1,0 +1,29 @@
+{
+  "assertions": [
+    { "id": "N001", "description": "GEMINI_API_KEY documentada no .env.example", "priority": 1 },
+    { "id": "N002", "description": "DATABASE_URL ou equivalente documentada no .env.example", "priority": 1 },
+    { "id": "N003", "description": "README.md tem mais de 100 palavras de conteúdo real", "priority": 5 },
+    { "id": "N004", "description": "Existe rules.md com contexto de domínio CFTV", "priority": 4 },
+    { "id": "N005", "description": "Existe máquina de estados explícita para sessão Telegram", "priority": 2 },
+    { "id": "N006", "description": "Estado da sessão é persistido em banco (não só memória)", "priority": 2 },
+    { "id": "N007", "description": "Existe ao menos 1 teste unitário para cálculo de metragem de cabo", "priority": 3 },
+    { "id": "N008", "description": "Existe ao menos 1 teste unitário para cálculo de storage", "priority": 3 },
+    { "id": "N009", "description": "Existe validação de input numérico (vírgula/ponto, locale BR)", "priority": 3 },
+    { "id": "N010", "description": "Existe fallback para indisponibilidade de APIs de IA", "priority": 4 },
+    { "id": "N011", "description": "Catálogo tem campo de timestamp de atualização", "priority": 5 },
+    { "id": "N012", "description": "Ingestão de planilha tem schema de validação", "priority": 4 },
+    { "id": "N013", "description": "Existe timeout/cancelamento de sessão Telegram", "priority": 4 },
+    { "id": "N014", "description": "Logs são estruturados por sessão (chat_id presente)", "priority": 5 },
+    { "id": "N015", "description": "Existe inicialização de banco de dados (initDb)", "priority": 2 },
+    { "id": "N016", "description": "squads/ tem SKILL.md ou README descrevendo responsabilidades", "priority": 5 },
+    { "id": "N017", "description": "Não há credenciais hardcoded em nenhum arquivo JS pesquisado", "priority": 1 },
+    { "id": "N018", "description": "Existe tratamento de erro para input fora do fluxo esperado", "priority": 4 },
+    { "id": "N019", "description": "Existe critério documentado para escalonamento para revisão humana", "priority": 6 },
+    { "id": "N020", "description": ".mcp.json tem variáveis de env documentadas", "priority": 5 },
+    { "id": "N021", "description": "Uso de SQLite confirmado como banco local", "priority": 2 },
+    { "id": "N022", "description": "Existe suporte a múltiplos modelos de IA (Gemini/Groq/Anthropic)", "priority": 4 },
+    { "id": "N023", "description": "DialogueEngine trata resets de sessão", "priority": 3 },
+    { "id": "N024", "description": "Existe export de STATUS_NOCTUA em constantes", "priority": 4 },
+    { "id": "N025", "description": "README.md cita a arquitetura de agentes", "priority": 5 }
+  ]
+}

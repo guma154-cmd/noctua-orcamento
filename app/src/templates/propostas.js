@@ -22,6 +22,7 @@ ID: \`{{orcamento_id}}\` | Data: {{data_orcamento}}
 • Instalação técnica de {{quantidade_cameras}} {{descricao_cameras}}
 • Configuração de {{quantidade_gravador}} {{descricao_gravador}}
 • Montagem de {{quantidade_hd}} {{descricao_hd}}
+• 🕒 Período estimado de gravação: {{periodo_gravacao}}
 • Ajuste de ângulo e detecção de movimento
 • Configuração de acesso remoto via smartphone
 {{linha_extra_itens_servicos}}
@@ -56,6 +57,7 @@ ID: \`{{orcamento_id}}\` | Data: {{data_orcamento}}
 • Fornecimento e Instalação de {{quantidade_cameras}} {{descricao_cameras}}
 • 01 Gravador Digital {{descricao_gravador}}
 • 01 Armazenamento {{descricao_hd}} (Alta disponibilidade)
+• 🕒 Período estimado de gravação: {{periodo_gravacao}}
 • Toda a infraestrutura lógica e elétrica básica incluída
 • Acesso remoto configurado em múltiplos dispositivos
 {{linha_extra_itens_servicos}}

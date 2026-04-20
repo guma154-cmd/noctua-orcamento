@@ -55,13 +55,6 @@ const PROFILES = {
 
 const GLOBAL_TECH_QUESTIONS = [
   {
-    id: 'recording_days',
-    prompt: 'Quantos dias de gravação deseja manter?',
-    type: 'choice',
-    field: 'recording_days',
-    options: ['7 dias (Econômico)', '15 dias (Padrão)', '30 dias (Segurança Máxima)', 'Outro (Personalizado)']
-  },
-  {
     id: 'infra_status',
     prompt: 'Qual o estado da infraestrutura (tubulação) no local?',
     type: 'choice',
@@ -437,8 +430,24 @@ if (scope.selected_camera.sku === 'BLOCK') {
   scope.incompatibilities.push('BLOCK_CATALOG_CRITICAL_MISSING');
 }
 
-// Storage Dimensionado
-scope.selected_hd = await calculateStorage(scope, cameraCount, isIP);
+  // Storage Dimensionado
+  scope.selected_hd = await calculateStorage(scope, cameraCount, isIP);
+  
+  // REGRA: HD FORNECIDO PELO CLIENTE (CÁLCULO DE DIAS)
+  if (session.recording_required && session.recording_required.toLowerCase().includes('possuo')) {
+    scope.selected_hd.preco_custo = 0;
+    scope.selected_hd.produto += " (Fornecido pelo cliente)";
+    
+    // Cálculo do Período Estimado
+    const hdGB = parseInt(scope.client_hd_gb) || 0;
+    if (hdGB > 0) {
+      const gbPerDay = isIP ? 25 : 15;
+      scope.retention_days_estimate = Math.floor(hdGB / (cameraCount * gbPerDay));
+      if (!scope.incompatibilities.includes('ALERT_CLIENT_MATERIAL_HD')) {
+        scope.incompatibilities.push('ALERT_CLIENT_MATERIAL_HD');
+      }
+    }
+  }
 
 const acessorios = [];
   let cableName = isIP ? 'Cabo de Rede UTP Cat5e' : 'Cabo Coaxial Flexível 4mm';
@@ -461,12 +470,16 @@ const acessorios = [];
     const infraMeterage = isNaN(manualMeterage) ? Math.ceil(scope.estimated_cable_total_m * (infraStatus.includes('parcial') ? 0.3 : 1.0)) : manualMeterage;
 
     if (manualType) {
-        const infraItem = await findItemWithFallback('Infra', manualType, 8.5);
+        let infraItem = await findItemWithFallback('Infra', manualType, 8.5);
         acessorios.push({ ...infraItem, qtd: infraMeterage, categoria: 'Infra' });
         
         // Adiciona acessórios de fixação/passagem compatíveis
         if (manualType.includes('Eletroduto')) {
             const abraca = await findItemWithFallback('Infra', 'Abraçadeira Tipo D 3/4', 1.8);
+            if (infraStatus.includes('possuo')) {
+              abraca.preco_custo = 0;
+              abraca.produto += " (Fornecido pelo cliente)";
+            }
             acessorios.push({ ...abraca, qtd: Math.ceil(infraMeterage / 2), categoria: 'Infra' });
         }
     } else {
@@ -603,7 +616,11 @@ const resolvePendingTechnicalAnswer = (text, questionId) => {
   // Estes mapeamentos garantem que IDs de controle (slugs) sejam retornados corretamente
   // antes que o bloco genérico de opções capture o texto bruto dos botões.
   
-  if (questionId === 'infra_status') return { '1': 'Existente (Aproveitar atual)', '2': 'Nova (Instalação total)', '3': 'Parcial (Alguns pontos prontos)' }[clean] || clean;
+  if (questionId === 'infra_status') return { 
+    '1': 'Existente (Aproveitar atual)', 
+    '2': 'Nova (Instalação total)', 
+    '3': 'Parcial (Alguns pontos prontos)'
+  }[clean] || clean;
   
   if (questionId === 'long_distance_risk') {
       const val = (clean === '4' || lower.includes('sei')) ? 'unknown' :
@@ -624,17 +641,8 @@ const resolvePendingTechnicalAnswer = (text, questionId) => {
   
   if (questionId === 'route_type') return { '1': 'Simples (Caminho livre)', '2': 'Padrão (Ambiente comum)', '3': 'Difícil (Altura/Externa)' }[clean] || clean;
   
-  if (questionId === 'recording_days') {
-      const daysNum = parseInt(clean);
-      if (!isNaN(daysNum)) return daysNum.toString();
-      
-      if (clean === '1' || lower.includes('7')) return '7';
-      if (clean === '2' || lower.includes('15')) return '15';
-      if (clean === '3' || lower.includes('30')) return '30';
-      
       // Se for texto livre mas o motor encontrou um "match" no bloco genérico, 
       // deixamos passar se for um número válido.
-  }
   
   if (questionId === 'external_cameras') {
       const val = clean.split(' ')[0];
@@ -645,6 +653,7 @@ const resolvePendingTechnicalAnswer = (text, questionId) => {
       if (clean === '1' || lower.includes('padrão')) return 'padrão';
       if (clean === '2' || lower.includes('revisão')) return 'revisão';
   }
+
 
   // Validação Numérica Estrita para Metragem e Quantidades do TSR
   if (questionId === 'cable_total' || questionId === 'detailed_subflow_qty' || questionId === 'infra_meterage') {

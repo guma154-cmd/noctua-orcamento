@@ -2,6 +2,7 @@ const qualificacao = require('../agents/qualificacao');
 const orcamento = require('../agents/orcamento');
 const fornecedor = require('../agents/fornecedor');
 const memoria = require('../agents/memoria');
+const ai = require('../services/ai');
 const technicalScopeResolver = require('../agents/technical_scope_resolver');
 const technicalAuditor = require('../agents/technical_auditor');
 const ingestorPlanilha = require('../agents/ingestor_planilha');
@@ -31,16 +32,28 @@ class DialogueEngine {
   }
   
   async process(chatId, messageContent) {
-    const { text, type, filePath, mimeType } = messageContent;
+    let { text, type, filePath, mimeType } = messageContent;
+
+    // 0. SUPORTE GLOBAL A ÁUDIO (MULTIMODAL)
+    if ((type === 'voice' || type === 'audio') && filePath) {
+      console.log(`[Engine] Transcrevendo áudio global para: ${chatId}`);
+      const transcription = await ai.transcribeAudio(filePath);
+      if (transcription) {
+        console.log(`[Engine] Áudio transcrito: "${transcription}"`);
+        text = transcription;
+      }
+    }
+
     const cleanText = (text || "").toLowerCase().trim();
 
-    // 0. GESTÃO DE COMANDOS GLOBAIS
+    // 1. GESTÃO DE COMANDOS GLOBAIS
     const resetKeywords = ['reset', 'reiniciar', 'limpar', 'limpar sessão', '/start', 'start'];
     const isNewBudget = cleanText === 'novo_orcamento' || cleanText === 'novo orçamento';
     
     // Lista de sinônimos para o comando de retorno
     const backKeywords = ['voltar', 'retornar', 'retroceder', 'etapa anterior', 'pergunta anterior', 'voltar etapa', 'voltar pergunta'];
     const isBack = backKeywords.some(kw => cleanText === kw || cleanText.includes(kw)) || cleanText === 'menu:voltar';
+    const isMenu = cleanText === 'menu:main' || cleanText === 'menu' || cleanText === '/menu';
 
     // Heurística local para detecção de reset antes de carregar sessão (proteção contra números)
     const localLocal = parseLocal(text || "");
@@ -48,6 +61,12 @@ class DialogueEngine {
 
     let session = await memoria.buscarSessao(chatId) || { ...qualificacao.getDefaultState() };
     session.meta = session.meta || {};
+
+    if (isMenu) {
+      console.log(`[Engine] Retornando ao menu principal via comando: ${chatId}`);
+      await memoria.limparSessao(chatId);
+      return await this.showMainMenu(chatId, { ...qualificacao.getDefaultState() });
+    }
 
     if (isBack) {
       console.log(`[Engine] Voltando etapa para: ${chatId}`);
@@ -177,7 +196,9 @@ class DialogueEngine {
           const budgetIdPrefix = session.meta && session.meta.draft_id ? `[${session.meta.draft_id}] ` : "";
           let instruction = "a quantidade exata:";
           if (questionId === 'recording_days') instruction = "o número de dias de gravação:";
-          return { response: `${budgetIdPrefix}Entendido. Por favor, digite ${instruction}`, status: 'collecting_tech' };
+          const msg = `${budgetIdPrefix}Entendido. Por favor, digite ${instruction}`;
+          const menu = menus.menuOpcoes(msg, []);
+          return { response: menu.text, keyboard: menu.keyboard, status: 'collecting_tech' };
         }
 
         if (resolved !== null && resolved !== "") {
@@ -229,7 +250,9 @@ class DialogueEngine {
       if (resolved) {
         if (resolved === 'WAIT_FOR_MANUAL') {
           const budgetIdPrefix = session.meta && session.meta.draft_id ? `[${session.meta.draft_id}] ` : "";
-          return { response: `${budgetIdPrefix}Entendido. Por favor, digite a quantidade exata de câmeras:`, status: 'collecting' };
+          const msg = `${budgetIdPrefix}Entendido. Por favor, digite a quantidade exata de câmeras:`;
+          const menu = menus.menuOpcoes(msg, []);
+          return { response: menu.text, keyboard: menu.keyboard, status: 'collecting' };
         }
         const family = session.last_question_family;
         const field = qualificacao.QUESTION_FAMILIES[family].fields[0];
@@ -259,11 +282,10 @@ class DialogueEngine {
       session.flow_status = 'collecting_tech';
       await memoria.salvarSessao(chatId, session);
       const promptText = typeof unanswered.prompt === 'function' ? unanswered.prompt(payload) : unanswered.prompt;
-      if (unanswered.options) {
-          const menu = menus.menuOpcoes(promptText, unanswered.options);
-          return { response: menu.text, keyboard: menu.keyboard, status: 'collecting_tech' };
-      }
-      return { response: promptText, status: 'collecting_tech' };
+      
+      // Sempre anexa navegação no TSR também
+      const menu = menus.menuOpcoes(promptText, unanswered.options || []);
+      return { response: menu.text, keyboard: menu.keyboard, status: 'collecting_tech' };
     }
     const auditResult = await technicalAuditor.audit(session, payload);
     payload.audit_log = auditResult;
@@ -368,11 +390,10 @@ class DialogueEngine {
       if (waitingHuman) decision.text = "⚠️ [MODO ASSISTIDO] Rafael, tive dificuldade em entender... \n\n" + decision.text;
       await this.syncNoctuaStatus(chatId, session, STATUS_NOCTUA.INTAKE, waitingHuman);
       await memoria.salvarSessao(chatId, session);
-      if (decision.options) {
-          const menu = menus.menuOpcoes(decision.text, decision.options);
-          return { response: menu.text, keyboard: menu.keyboard, status: 'collecting' };
-      }
-      return { response: decision.text, status: 'collecting' };
+
+      // Sempre usa menuOpcoes para anexar botões de navegação (Voltar/Menu)
+      const menu = menus.menuOpcoes(decision.text, decision.options || []);
+      return { response: menu.text, keyboard: menu.keyboard, status: 'collecting' };
     }
     if (decision.action === 'resolve_technical_scope') return await this.handleTechnicalScope(chatId, session);
     await memoria.salvarSessao(chatId, session);
