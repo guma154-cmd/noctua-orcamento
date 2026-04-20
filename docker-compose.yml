@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  noctua-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: noctua-bot
+    restart: always
+    # Carrega as variáveis de ambiente do arquivo .env na raiz
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
