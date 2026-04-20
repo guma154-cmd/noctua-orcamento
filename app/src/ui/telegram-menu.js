@@ -174,6 +174,22 @@ const menuEscolhaModelo = (draftId) => {
   return { text: header, keyboard, parse_mode: 'Markdown' };
 };
 
+/**
+ * Menu de seleção de modelo na abertura do orçamento (Fase 1)
+ */
+const menuSelecaoModeloInicial = (draftId) => {
+  const header = `🦉 *NOCTUA — Novo Orçamento [${draftId}]*\n\nQual o modelo deste projeto?`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [{ text: '📦 [A] Fornecimento Completo', callback_data: 'A' }],
+    [{ text: '🔧 [B] Mão de Obra Pura', callback_data: 'B' }],
+    [{ text: '📊 [C] Fornecimento Misto', callback_data: 'C' }],
+    LINHAS.voltar
+  ]);
+
+  return { text: header, keyboard, parse_mode: 'Markdown' };
+};
+
 const menuConfirmacao = (mensagem) => {
   const keyboard = Markup.inlineKeyboard([
     LINHAS.confirmacao,
@@ -262,5 +278,6 @@ module.exports = {
   menuOpcoes,
   menuRevisaoImportacao,
   menuConfirmacaoReset,
-  menuRevisaoOrcamento
+  menuRevisaoOrcamento,
+  menuSelecaoModeloInicial
 };

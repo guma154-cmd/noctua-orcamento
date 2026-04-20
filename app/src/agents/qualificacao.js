@@ -5,6 +5,16 @@ const { parseLocal } = require("../utils/heuristic-parser");
  * MAPEAMENTO DE FAMÍLIAS SEMÂNTICAS - CONVERSA GUIADA
  */
 const QUESTION_FAMILIES = {
+  budget_model: {
+    label: 'modelo do orçamento',
+    fields: ['budget_model'],
+    options: [
+      'A - Fornecimento Completo\n(Materiais + Instalação)', 
+      'B - Só Mão de Obra\n(Cliente já comprou tudo)', 
+      'C - Fornecimento Misto\n(Divisão por categoria)'
+    ],
+    prompt: "🦉 NOCTUA — Novo Orçamento\nQual o modelo deste projeto?"
+  },
   property_type: {
     label: 'tipo de local',
     fields: ['property_type'],
@@ -100,6 +110,7 @@ const getDefaultState = () => ({
   system_type: null,
   recording_required: null,
   remote_view: null,
+  budget_model: null,
   material_source: null,
   answered_families: [],
   last_question_family: null,
@@ -209,8 +220,15 @@ const resolvePendingAnswer = (text, family) => {
       if (clean === '3' || lower.includes('30')) return '30';
   }
 
+  if (family === 'budget_model') {
+      if (clean === '1' || lower.includes('modelo a') || lower.includes('completo')) return 'A';
+      if (clean === '2' || lower.includes('modelo b') || lower.includes('obra')) return 'B';
+      if (clean === '3' || lower.includes('modelo c') || lower.includes('misto')) return 'C';
+      if (lower === 'a' || lower === 'b' || lower === 'c') return lower.toUpperCase();
+  }
+
   return null;
-};
+}
 
 const classifyIncomingMessage = async (text, estado) => {
   const localResult = parseLocal(text);

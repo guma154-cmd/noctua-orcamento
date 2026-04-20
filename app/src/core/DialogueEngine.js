@@ -391,6 +391,12 @@ class DialogueEngine {
       await this.syncNoctuaStatus(chatId, session, STATUS_NOCTUA.INTAKE, waitingHuman);
       await memoria.salvarSessao(chatId, session);
 
+      // Interceptação: Menu Premium para Escolha de Modelo Inicial (SPRINT 1)
+      if (currentFamily === 'budget_model') {
+        const menu = menus.menuSelecaoModeloInicial(session.meta.draft_id);
+        return { response: menu.text, keyboard: menu.keyboard, status: 'collecting' };
+      }
+
       // Sempre usa menuOpcoes para anexar botões de navegação (Voltar/Menu)
       const menu = menus.menuOpcoes(decision.text, decision.options || []);
       return { response: menu.text, keyboard: menu.keyboard, status: 'collecting' };
