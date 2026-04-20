@@ -34,6 +34,21 @@
     { "id": "M032", "description": "No Modelo B, alertas de hardware do cliente NÃO são emitidos como CRITICAL da NOCTUA", "status": "pass" },
     { "id": "M033", "description": "Alerta CRITICAL exige confirmação do operador", "status": "pass" },
     { "id": "M034", "description": "Cenário ORC-000112 (8 câmeras, Modelo A, material cliente) → Valor Final é número válido, não NaN", "status": "pass" },
-    { "id": "M035", "description": "Cenário ORC-000112 como Modelo B → proposta limpa sem campos de material zerados sem contexto", "status": "pass" }
+    { "id": "M035", "description": "Cenário ORC-000112 como Modelo B → proposta limpa sem campos de material zerados sem contexto", "status": "pass" },
+    { "id": "S001", "description": "Modelo A pergunta dias de retenção desejados", "status": "pass" },
+    { "id": "S002", "description": "Modelo A seleciona HD compatível com dias desejados", "status": "pass" },
+    { "id": "S003", "description": "Modelo A exibe estimativa de retenção no relatório", "status": "pass" },
+    { "id": "S004", "description": "Modelo B pergunta capacidade do HD do cliente", "status": "pass" },
+    { "id": "S005", "description": "Modelo B exibe estimativa de retenção no relatório", "status": "pass" },
+    { "id": "S006", "description": "Modelo C usa fluxo correto conforme quem fornece HD", "status": "pass" },
+    { "id": "S007", "description": "calcRetentionDays(2, 8, '2MP') retorna ~24 dias", "status": "pass" },
+    { "id": "S008", "description": "calcRetentionDays(1, 8, '2MP') retorna ~12 dias", "status": "pass" },
+    { "id": "S009", "description": "calcRetentionDays(4, 8, '2MP') retorna ~48 dias", "status": "pass" },
+    { "id": "S010", "description": "calcRetentionDays(0, 8, '2MP') retorna error, não NaN e não 0", "status": "pass" },
+    { "id": "S011", "description": "calcRetentionDays(2, 0, '2MP') retorna error, não NaN e não Infinity", "status": "pass" },
+    { "id": "S012", "description": "Resolução desconhecida usa fallback '2MP'", "status": "pass" },
+    { "id": "S013", "description": "Relatório com HD não informado exibe mensagem orientativa, não campo vazio ou NaN", "status": "pass" },
+    { "id": "S014", "description": "Seção de retenção aparece ANTES da proposta comercial no relatório final", "status": "pass" },
+    { "id": "S015", "description": "Estimativa do caso real: 2TB, 8 câmeras 2MP → resultado entre 20 e 28 dias", "status": "pass" }
   ]
 }
