@@ -1,5 +1,6 @@
 const { db } = require("../db/sqlite");
 const { BITRATE_GBDAY, OVERHEAD_SISTEMA, TECH_TYPE, POE_MODE } = require("../catalog/technology-constants");
+const { DORI_LEVELS, DORI_RANGES, DORI_LABELS } = require("../catalog/dori-constants");
 const { calcRetentionDays } = require("../utils/storage-calculator");
 const { selectNVR } = require("../utils/nvr-selector");
 const { selectCable } = require("../utils/cable-selector");
@@ -58,6 +59,13 @@ const PROFILES = {
 };
 
 const GLOBAL_TECH_QUESTIONS = [
+  {
+    id: 'dori_level',
+    prompt: 'Qual o objetivo principal de imagem (Padrão DORI)?',
+    type: 'choice',
+    field: 'dori_level',
+    options: Object.values(DORI_LABELS)
+  },
   {
     id: 'infra_status',
     prompt: 'Qual o estado da infraestrutura (tubulação) no local?',
@@ -151,6 +159,7 @@ const GLOBAL_TECH_QUESTIONS = [
 const DEFAULT_SCOPE = {
   profile: null,
   system_type: 'analog',
+  dori_level: DORI_LEVELS.DETECTION,
   selected_recorder: null,
   selected_camera: null,
   external_count: undefined,
@@ -278,8 +287,7 @@ const mapPoEMode = (label) => {
 /**
  * Calculadora de Storage NOCTUA (V5 - SPRINT 5)
  */
-const calculateStorage = async (scope, cameraCount, isIP, session) => {
-  const resolution = session.system_type?.includes('IP') ? '2MP' : '2MP'; // Fallback ou extraído
+const calculateStorage = async (scope, cameraCount, isIP, session, resolution = '2MP') => {
   
   // SEÇÃO: CLIENTE FORNECE HD (B / C)
   const isClientSupplied = session.recording_required?.toLowerCase().includes('possuo') || 
@@ -410,7 +418,27 @@ const generateTechnicalPayload = async (session) => {
   const techType = mapTechType(session.system_type);
   const poeMode = mapPoEMode(session.poe_mode);
   const isIP = techType === TECH_TYPE.IP;
-  const resolution = "2MP"; // Default simplificado para Noctua V5
+  const maxDistance = scope.max_point_distance_m || 30;
+
+  // 1.1 Resolução Baseada em DORI (V5.1)
+  let resolution = "2MP";
+  const targetDori = scope.dori_level || DORI_LEVELS.DETECTION;
+
+  // Busca a melhor resolução que atenda a distância no nível DORI escolhido
+  const resolutionsOrdered = ['2MP', '4MP', '8MP'];
+  for (const res of resolutionsOrdered) {
+      if (DORI_RANGES[res] && DORI_RANGES[res][targetDori] >= maxDistance) {
+          resolution = res;
+          break;
+      }
+      // Se chegarmos no último e ainda não atender, usamos o último (mais potente)
+      resolution = res;
+  }
+
+  if (DORI_RANGES[resolution][targetDori] < maxDistance) {
+      scope.incompatibilities.push('ALERT_DORI_LIMIT');
+      scope.operational_flags.high_complexity = true;
+  }
 
   // 2. Seleção de Gravador e Switch (V5)
   const nvrResult = selectNVR(techType, cameraCount, poeMode);
@@ -428,7 +456,6 @@ const generateTechnicalPayload = async (session) => {
   }
 
   // 3. Seleção de Cabo e Câmera (V5)
-  const maxDistance = scope.max_point_distance_m || 30;
   const cableResult = selectCable(techType, resolution, maxDistance);
   const cableItem = await findItemWithFallback('Cabo', cableResult.label, isIP ? 3.5 : 2.8);
   
@@ -438,7 +465,8 @@ const generateTechnicalPayload = async (session) => {
       scope.waiting_human = true;
   }
 
-  const cameraName = profile.base_camera[isIP ? 'ip' : 'analog'];
+  const baseName = profile.base_camera[isIP ? 'ip' : 'analog'];
+  const cameraName = baseName.replace('2MP', resolution);
   scope.selected_camera = await findItemWithFallback('Camera', cameraName, isIP ? 250 : 120, { tech: techType });
 
   // 4. Acessórios e Infraestrutura (V5)
@@ -475,7 +503,7 @@ const generateTechnicalPayload = async (session) => {
   }
 
   // 5. Storage (V5)
-  scope.selected_hd = await calculateStorage(scope, cameraCount, isIP, session);
+  scope.selected_hd = await calculateStorage(scope, cameraCount, isIP, session, resolution);
   
   // 6. Consolidação e Regras de Fornecimento
   const shouldClientSupply = (categoria) => {
@@ -564,6 +592,13 @@ const resolvePendingTechnicalAnswer = (text, questionId) => {
   }
   
   if (questionId === 'route_type') return { '1': 'Simples (Caminho livre)', '2': 'Padrão (Ambiente comum)', '3': 'Difícil (Altura/Externa)' }[clean] || clean;
+  
+  if (questionId === 'dori_level') {
+      if (clean === '1' || lower.includes('detecção')) return DORI_LEVELS.DETECTION;
+      if (clean === '2' || lower.includes('observação')) return DORI_LEVELS.OBSERVATION;
+      if (clean === '3' || lower.includes('reconhecimento')) return DORI_LEVELS.RECOGNITION;
+      if (clean === '4' || lower.includes('identificação')) return DORI_LEVELS.IDENTIFICATION;
+  }
   
       // Se for texto livre mas o motor encontrou um "match" no bloco genérico, 
       // deixamos passar se for um número válido.

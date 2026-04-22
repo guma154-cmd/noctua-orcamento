@@ -1,3 +1,5 @@
+const { DORI_LEVELS } = require("./dori-constants");
+
 // Tecnologias suportadas
 const TECH_TYPE = {
   IP:        'ip',
@@ -37,5 +39,6 @@ module.exports = {
   POE_MODE,
   CABLE_TYPE,
   BITRATE_GBDAY,
-  OVERHEAD_SISTEMA
+  OVERHEAD_SISTEMA,
+  DORI_LEVELS
 };
