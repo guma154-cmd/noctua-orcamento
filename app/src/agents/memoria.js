@@ -26,28 +26,74 @@ const buscarCliente = (telegram_id) => {
   });
 };
 
-const salvarOrcamento = (cliente_id, escopo, valor_final, metadata = {}) => {
+const salvarOrcamento = (cliente_id, escopo, valor_final, metadata = {}) => {      
   return new Promise((resolve, reject) => {
-    const { status_noctua, waiting_human, metadata_json } = metadata;
+    const { status_noctua, waiting_human, metadata_json, confidence_score, valor_total, budget_model } = metadata;
     db.run(
-      `INSERT INTO orcamentos (cliente_id, escopo, valor_final, status_noctua, waiting_human, last_interaction_at, metadata_json) 
-       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
+      `INSERT INTO orcamentos (cliente_id, escopo, valor_final, status_noctua, waiting_human, last_interaction_at, metadata_json, confidence_score, valor_total, budget_model)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)`,
       [
-        cliente_id, 
-        JSON.stringify(escopo), 
-        valor_final, 
-        status_noctua || null, 
-        waiting_human || 0, 
-        metadata_json ? JSON.stringify(metadata_json) : null
+        cliente_id,
+        JSON.stringify(escopo),
+        valor_final,
+        status_noctua || null,
+        waiting_human || 0,
+        metadata_json ? JSON.stringify(metadata_json) : null,
+        confidence_score || null,
+        valor_total || valor_final,
+        budget_model || null
       ],
-      function(err) {
+      async function(err) {
         if (err) reject(err);
-        else resolve(this.lastID);
+        else {
+          const orcId = this.lastID;
+          // Registro inicial na Timeline
+          try {
+            const { LeadsRepository } = require('../services/LeadsRepository');
+            await LeadsRepository.registrarEvento(orcId, 'orcamento_gerado', { valor_total: valor_total || valor_final });
+          } catch (e) {
+            console.error("[Timeline Error]:", e);
+          }
+          resolve(orcId);
+        }
       }
     );
   });
 };
 
+const salvarVersaoOrcamento = (orcamento_id, payload) => {
+  return new Promise((resolve, reject) => {
+    db.get("SELECT MAX(versao) as ultima FROM orcamentos_versoes WHERE orcamento_id = ?", [orcamento_id], (err, row) => {
+      const novaVersao = (row && row.ultima ? row.ultima : 0) + 1;
+      db.run(
+        "INSERT INTO orcamentos_versoes (orcamento_id, versao, payload) VALUES (?, ?, ?)",
+        [orcamento_id, novaVersao, JSON.stringify(payload)],
+        function(err) {
+          if (err) reject(err);
+          else resolve(novaVersao);
+        }
+      );
+    });
+  });
+};
+
+const buscarOrcamentoPorId = (orcId) => {
+    return new Promise((resolve, reject) => {
+      db.get("SELECT * FROM orcamentos WHERE id = ?", [orcId], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+};
+
+const buscarOrcamentoPorDraftId = (draftId) => {
+  return new Promise((resolve, reject) => {
+    db.get("SELECT * FROM orcamentos WHERE metadata_json LIKE ?", [`%${draftId}%`], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+};
 const atualizarStatusOrcamento = (orcId, status, waitingHuman = 0, metadata = null) => {
   return new Promise((resolve, reject) => {
     const query = metadata 
@@ -286,21 +332,53 @@ const listarOrcamentosEmAlerta = () => {
   });
 };
 
-const listarOrcamentosParaFollowUp = (horasInatividade = 24) => {
+const listarOrcamentosAtivosParaFollowUp = () => {
   return new Promise((resolve, reject) => {
-    // Para SQLite, usamos datetime('now', '-X hours')
-    const params = [`-${horasInatividade} hours`];
     db.all(`
-      SELECT * FROM orcamentos 
-      WHERE (status_noctua = 'proposta_enviada' OR status_noctua = 'lead_qualificado' OR status_noctua = 'followup_24h')
-      AND waiting_human = 0 
-      AND datetime(last_interaction_at) <= datetime('now', ?)
-      ORDER BY last_interaction_at ASC
-    `, params, (err, rows) => {
+      SELECT o.*, c.nome as cliente_nome
+      FROM orcamentos o
+      JOIN clientes c ON o.cliente_id = c.id
+      WHERE o.status_noctua IN ('orcamento', 'negociacao')
+      AND o.waiting_human = 0
+      ORDER BY o.last_interaction_at ASC
+    `, [], (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
     });
   });
+};
+
+const registrarAcaoFollowUp = (orcId, count, nextStatus = null) => {
+  return new Promise((resolve, reject) => {
+    const query = nextStatus 
+      ? "UPDATE orcamentos SET followup_count = ?, last_followup_at = CURRENT_TIMESTAMP, status_noctua = ?, last_interaction_at = CURRENT_TIMESTAMP WHERE id = ?"
+      : "UPDATE orcamentos SET followup_count = ?, last_followup_at = CURRENT_TIMESTAMP, last_interaction_at = CURRENT_TIMESTAMP WHERE id = ?";
+    
+    const params = nextStatus ? [count, nextStatus, orcId] : [count, orcId];
+
+    db.run(query, params, function(err) {
+      if (err) reject(err);
+      else resolve(true);
+    });
+  });
+};
+
+const contarProdutosFornecedores = () => {
+    return new Promise((resolve, reject) => {
+        db.get("SELECT COUNT(*) as total FROM fornecedores_v2", (err, row) => {
+            if (err) reject(err);
+            else resolve(row ? row.total : 0);
+        });
+    });
+};
+
+const listarFornecedores = (limit = 20) => {
+    return new Promise((resolve, reject) => {
+        db.all("SELECT produto, preco_custo, updated_at FROM fornecedores_v2 ORDER BY updated_at DESC LIMIT ?", [limit], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
 };
 
 module.exports = { 
@@ -320,6 +398,9 @@ module.exports = {
   sincronizarPrecosFornecedor,
   listarOrcamentosEmAlerta,
   resolverAlertaOrcamento,
-  listarOrcamentosParaFollowUp
+  listarOrcamentosAtivosParaFollowUp,
+  registrarAcaoFollowUp,
+  contarProdutosFornecedores,
+  listarFornecedores
 };
 

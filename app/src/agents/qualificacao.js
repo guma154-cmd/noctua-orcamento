@@ -1,4 +1,4 @@
-const { askGemini } = require("../services/ai");
+const ai = require("../services/ai");
 const { parseLocal } = require("../utils/heuristic-parser");
 
 /**
@@ -341,7 +341,7 @@ const classifyIncomingMessage = async (text, estado) => {
   
   let result;
   try {
-    result = await askGemini(text, systemInstruction);
+    result = await ai.askGemini(text, systemInstruction);
     console.log(`[Intent-Router] Input: "${text}" -> IA Result: "${result}"`);
   } catch (err) {
     console.error(`[Intent-Router Error]: Falha no Gemini: ${err.message}`);
@@ -422,7 +422,7 @@ const atualizarEstado = async (texto, estadoAtual) => {
   
   Retorne APENAS o JSON puro.`;
 
-  const response = await askGemini(texto, systemPrompt);
+  const response = await ai.askGemini(texto, systemPrompt);
 
   if (response) {
     try {

@@ -27,15 +27,26 @@ const BTN = {
   MIDIA_PDF:         { text: '📄 PDF',                     callback_data: 'supplier_midia:pdf' },
   MIDIA_AUDIO:       { text: '🎤 Áudio',                   callback_data: 'supplier_midia:audio' },
 
-  // Sub-menu: Revisão de Cotação
-  CONFIRMAR_COT:     (id) => ({ text: '✅ Confirmar',       callback_data: `confirm_quote:${id}` }),
-  EDITAR_NOME_COT:   (id) => ({ text: '✏️ Editar Nome',    callback_data: `edit_name_quote:${id}` }),
-  CANCELAR_COT:      (id) => ({ text: '❌ Cancelar',        callback_data: `cancel_quote:${id}` }),
+  // Sub-menu: RevisÃ£o de CotaÃ§Ã£o
+  CONFIRMAR_COT:     (id) => ({ text: 'âœ… Confirmar',       callback_data: `confirm_quote:${id}` }),
+  EDITAR_NOME_COT:   (id) => ({ text: 'âœï¸ Editar Nome',    callback_data: `edit_name_quote:${id}` }),
+  CANCELAR_COT:      (id) => ({ text: 'âŒ Cancelar',        callback_data: `cancel_quote:${id}` }),
 
-  // Sub-menu: Modelo de Orçamento
-  MODELO_A:          { text: '🔧 Modelo A — Só MDO',       callback_data: 'model:A' },
-  MODELO_B:          { text: '📦 Modelo B — Mat + MDO',    callback_data: 'model:B' },
-  MODELO_AMBOS:      { text: '📊 Gerar os Dois',           callback_data: 'model:ambos' },
+  // Sub-menu: RevisÃ£o de OrÃ§amento (Story 4.3)
+  APROVAR_ORC:       (id) => ({ text: 'âœ… Aprovar e Enviar', callback_data: `review:approve:${id}` }),
+  EDITAR_ORC:        (id) => ({ text: 'âœï¸ Editar Dados',    callback_data: `review:edit:${id}` }),
+  CANCELAR_ORC:      (id) => ({ text: 'âŒ Cancelar',        callback_data: `review:cancel:${id}` }),
+  ENVIAR_AGORA:      (id) => ({ text: 'ðŸ“§ Enviar Agora (Auto)', callback_data: `review:approve:${id}` }),
+
+  // Sub-menu: Follow-up (Story 5.2)
+  FOLLOWUP_ENVIAR:   (id) => ({ text: 'ðŸš€ Enviar',        callback_data: `followup:send:${id}` }),
+  FOLLOWUP_ADIAR:    (id) => ({ text: 'â•’ Adiar 12h',     callback_data: `followup:delay:${id}` }),
+  FOLLOWUP_PULAR:    (id) => ({ text: 'â­ Pular',         callback_data: `followup:skip:${id}` }),
+
+  // Sub-menu: Modelo de OrÃ§amento
+  MODELO_A:          { text: 'ðŸ”§ Modelo A â€” SÃ³ MDO',       callback_data: 'model:A' },
+  MODELO_B:          { text: 'ðŸ“¦ Modelo B â€” Mat + MDO',    callback_data: 'model:B' },
+  MODELO_AMBOS:      { text: 'ðŸ“Š Gerar os Dois',           callback_data: 'model:ambos' },
 
   // Confirmação de Reset
   RESET_SIM:         { text: '✅ Sim, cancelar e apagar', callback_data: 'reset:confirm' },
@@ -258,15 +269,41 @@ const menuRevisaoOrcamento = (resumo) => {
 };
 
 /**
- * Menu de confirmação de reset de orçamento.
+ * Menu de confirmaÃ§Ã£o de reset de orÃ§amento.
  */
 const menuConfirmacaoReset = () => {
-  const header = `⚠️ *CONFIRMAÇÃO DE CANCELAMENTO*\n\nTem certeza que deseja cancelar e apagar este orçamento?\n\n_Esta ação não pode ser desfeita._`;
+  const header = `âš ï¸ *CONFIRMAÃ‡ÃƒO DE CANCELAMENTO*\n\nTem certeza que deseja cancelar e apagar este orÃ§amento?\n\n_Esta aÃ§Ã£o nÃ£o pode ser desfeita._`;       
   const keyboard = Markup.inlineKeyboard([
     LINHAS.confirmacao_reset
   ]);
   return { text: header, keyboard, parse_mode: 'Markdown' };
 };
+
+/**
+ * Menu de DecisÃ£o de Auditoria (Story 4.3)
+ */
+const menuAuditoriaRafael = (orcId, canAutoSend = false) => {
+  const header = `ðŸ“Š *RELATÃ“RIO INTERNO - ORÃ‡AMENTO [${orcId}]*\n\n` +
+                 `Rafael, revise os detalhes técnicos e financeiros abaixo.\n` +
+                 (canAutoSend ? `âœ… *CONFIANÃ‡A ALTA:* Este orÃ§amento pode ser enviado automaticamente.` : `âš ï¸ *REVISÃƒO OBRIGATÃ“RIA:* ConfianÃ§a baixa ou valor elevado.`);
+
+  const buttons = canAutoSend 
+    ? [[BTN.ENVIAR_AGORA(orcId)], [BTN.EDITAR_ORC(orcId), BTN.CANCELAR_ORC(orcId)]]
+    : [[BTN.APROVAR_ORC(orcId)], [BTN.EDITAR_ORC(orcId), BTN.CANCELAR_ORC(orcId)]];
+
+  return { text: header, keyboard: Markup.inlineKeyboard(buttons), parse_mode: 'Markdown' };
+};
+
+const menuConfirmacaoFornecedor = (draftId) => ({
+  text: 'Itens extraídos. O que você deseja fazer?',
+  keyboard: {
+    inline_keyboard: [
+      [{ text: '✅ Cadastrar Tudo', callback_data: `confirm_supplier_quote:${draftId}` }],
+      [{ text: '✏️ Revisar', callback_data: `review_supplier_quote:${draftId}` }],
+      [{ text: '❌ Cancelar', callback_data: `cancel_supplier_quote:${draftId}` }]
+    ]
+  }
+});
 
 module.exports = {
   BTN,
@@ -279,5 +316,7 @@ module.exports = {
   menuRevisaoImportacao,
   menuConfirmacaoReset,
   menuRevisaoOrcamento,
-  menuSelecaoModeloInicial
+  menuSelecaoModeloInicial,
+  menuAuditoriaRafael,
+  menuConfirmacaoFornecedor
 };

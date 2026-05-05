@@ -16,24 +16,30 @@ const ELIGIBILITY_MATRIX = {
     { provider: geminiPrimary, priority: 3 }
   ],
   "image-to-text": [
-    { 
-      provider: groq, 
-      params: { model: "llama-3.2-11b-vision-preview" },
-      timeout: 30000, 
+    {
+      provider: geminiPrimary,
+      timeout: 45000,
       supports: ["vision", "text"],
-      priority: 1 
+      priority: 1
     },
-    { 
-      provider: geminiPrimary, 
-      timeout: 45000, 
+    {
+      provider: groq,
+      params: { model: "meta-llama/llama-4-scout-17b-16e-instruct" },
+      timeout: 30000,
       supports: ["vision", "text"],
-      priority: 2 
+      priority: 2
+    },
+    {
+      provider: geminiFallback,
+      timeout: 60000,
+      supports: ["vision", "text"],
+      priority: 3
     }
-  ],
-  "PDF": [
+  ],  "PDF": [
     { provider: geminiPrimary, priority: 1 },
     { provider: groq, priority: 2 },
-    { provider: openrouter, params: { model: "meta-llama/llama-3.3-70b-instruct" }, priority: 3 }
+    { provider: geminiFallback, priority: 3 },
+    { provider: openrouter, params: { model: "meta-llama/llama-3.3-70b-instruct" }, priority: 4 }
   ],  "AUDIO": [
     { provider: groq, priority: 1 },
     { provider: geminiPrimary, priority: 2 },

@@ -24,8 +24,8 @@ function calcRetentionDays(hdCapacityRaw, numCameras, resolution) {
   const cam = parseInt(numCameras);
   const res = resolution || '2MP';
 
-  if (hd <= 0) return { days: null, error: 'HD_INVALIDO', message: 'HD inválido' };
-  if (cam <= 0) return { days: null, error: 'CAMERAS_INVALIDO', message: 'Câmeras inválido' };
+  if (hd <= 0 || isNaN(hd)) return { days: null, error: 'HD_INVALIDO', message: 'Capacidade do HD inválida ou não informada.' };
+  if (cam <= 0) return { days: null, error: 'CAMERAS_INVALIDO', message: 'Número de câmeras inválido.' };
 
   const bitrate     = BITRATE_GBDAY[res] ?? BITRATE_GBDAY['2MP'];
   const hdUsableGB  = (hd * 1024) * (1 - OVERHEAD_SISTEMA);
@@ -59,7 +59,11 @@ function calcHDForDays(daysDesired, numCameras, resolution) {
   if (tbNeeded <= 4)  return 'HD 4TB SkyHawk';
   if (tbNeeded <= 6)  return 'HD 6TB SkyHawk';
   if (tbNeeded <= 8)  return 'HD 8TB SkyHawk';
-  return 'HD 10TB SkyHawk';
+  if (tbNeeded <= 10) return 'HD 10TB SkyHawk';
+  if (tbNeeded <= 12) return 'HD 12TB SkyHawk';
+  if (tbNeeded <= 16) return 'HD 16TB SkyHawk';
+  
+  return 'HD (Múltiplos HDs necessários)';
 }
 
 module.exports = { calcRetentionDays, calcHDForDays, parseStorageToTB };

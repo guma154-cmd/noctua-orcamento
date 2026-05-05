@@ -9,6 +9,7 @@ const ingestorPlanilha = require('../agents/ingestor_planilha');
 const { parseLocal } = require('../utils/heuristic-parser');
 const menus = require('../ui/telegram-menu');
 const { STATUS_NOCTUA } = require('../utils/constants');
+const { LeadsRepository, EVENT_TYPES } = require('../services/LeadsRepository');
 
 /**
  * NOCTUA DIALOGUE ENGINE - V17 (HARDENING READY)
@@ -67,6 +68,17 @@ class DialogueEngine {
 
     let session = await memoria.buscarSessao(chatId) || { ...qualificacao.getDefaultState() };
     session.meta = session.meta || {};
+
+    // The intake logic is handled in bot.js, DialogueEngine just consumes messageContent.
+
+    if (session.active_flow === 'supplier_quote' && messageContent.type === 'input_fornecedor') {
+        return await fornecedor.handleSupplierIngestion(chatId, messageContent.text, session);
+    }
+
+    // REGISTRO DE EVENTO: Mensagem Recebida (Story 5.1)
+    if (session.meta && session.meta.current_orcamento_db_id && text) {
+      LeadsRepository.registrarEvento(session.meta.current_orcamento_db_id, EVENT_TYPES.MENSAGEM_RECEBIDA, { text: text.substring(0, 100), type });
+    }
 
     if (isMenu) {
       console.log(`[Engine] Retornando ao menu principal via comando: ${chatId}`);
@@ -254,6 +266,15 @@ class DialogueEngine {
       if (text && text.startsWith('cancel_quote:')) return await this.handleSupplierCancel(chatId, text, session);
       if (text && text.startsWith('edit_name_quote:')) return await this.handleSupplierEditName(chatId, text, session);
 
+      // Tratamento para quando a imagem da cotação do fornecedor chega processada do Intake
+      if (session.active_flow === 'supplier_quote') {
+        if (session.flow_status === 'awaiting_file' || session.flow_status === 'awaiting_supplier_name') {
+            const fornecedor = require('../agents/fornecedor');
+            // O próprio handleSupplierIngestion avança o flow_status agora
+            return await fornecedor.handleSupplierIngestion(chatId, text, session);
+        }
+      }
+
       const normalizedText = text.includes(':') ? text.split(':')[1] : text;
       const resolved = qualificacao.resolvePendingAnswer(normalizedText, session.last_question_family);
       if (resolved) {
@@ -310,7 +331,10 @@ class DialogueEngine {
       const systemIncompatibilities = translatedIncompatibilities.map(t => {
           return `• ${t.title}: ${t.message}`;
       });
-      const aiFlags = (auditResult.flags || []).map(f => `• [IA] ${f.issue} (Severidade: ${f.severity})`);
+      const aiFlags = (auditResult.flags || []).map(f => {
+          const evidence = (f.evidence && f.evidence.length > 0) ? ` (Campos: ${f.evidence.join(', ')})` : "";
+          return `• [IA] ${f.issue}${evidence} (Severidade: ${f.severity})`;
+      });
       const allAlerts = [...systemIncompatibilities, ...aiFlags].join('\n');
       const aiNote = auditResult.ai_observations ? `\n\n🔍 *Observação do Auditor IA:*\n${auditResult.ai_observations}` : "";
       
@@ -327,23 +351,43 @@ class DialogueEngine {
     }
     await this.syncNoctuaStatus(chatId, session, STATUS_NOCTUA.QUALIFIED);
     
-    // EXECUÇÃO FINAL AUTOMÁTICA (UNIFIED ENTRY POINT)
+    // EXECUÃ‡ÃƒO FINAL AUTOMÃTICA (UNIFIED ENTRY POINT)
     const result = await this.executeBudgetWorkflow(chatId, session);
     const model = session.budget_model || 'A';
+
+    // --- STORY 4.3: LOGICA DE DECISÃO DE REVIEW ---
+    // 1. Salvar orçamento no banco para gerar ID e persistir metadados
+    const cliente = await memoria.buscarCliente(chatId) || { id: await memoria.registrarCliente(chatId, session.operator_name || 'Rafael') };
+    const confidence = session.technical_payload?.confidence || 1.0; // Fallback se não houver IA
+    const valorTotal = result.financeiro.valorCompleto;
+
+    const orcDbId = await memoria.salvarOrcamento(cliente.id, session, valorTotal, {
+        status_noctua: STATUS_NOCTUA.PROCESSING,
+        confidence_score: confidence,
+        valor_total: valorTotal,
+        budget_model: model,
+        draft_id: session.meta.draft_id
+    });
     
+    session.meta.current_orcamento_db_id = orcDbId;
+
     const relOperacional = orcamento.gerarRelatorioOperacional(model, result);
-    let propostaTextual = model === 'A' ? result.propostas.modelo_a : result.propostas.modelo_b;
+    const canAutoSend = confidence > 0.95 && valorTotal < 5000;
+
+    // STORY 4.3 FIX: Enviar APENAS o relatório operacional para o Rafael revisar.
+    // A proposta para o cliente NÃO é mais retornada aqui para evitar vazamento.
+    const menuReview = menus.menuAuditoriaRafael(orcDbId, canAutoSend);
 
     await memoria.limparSessao(chatId);
 
-    return { 
-      response: `📍 *RELATÓRIO OPERACIONAL*\n${relOperacional}\n\n━━━━━━━━━━━━━━━\n\n📄 *PROPOSTA PARA O CLIENTE*\n${propostaTextual}`,
+    return {
+      response: relOperacional,
+      keyboard: menuReview.keyboard,
       parse_mode: 'Markdown',
-      status: 'idle' 
+      status: 'idle'
     };
-  }
-
-  async handleImportReview(chatId, text, session) {
+    }
+    async handleImportReview(chatId, text, session) {
       const choice = text.trim();
       const clean = choice.toLowerCase();
       if (choice === '4' || clean.includes('cancelar')) {
@@ -381,6 +425,10 @@ class DialogueEngine {
   }
 
   async continueFlow(chatId, text, session, intent) {
+    if (session.active_flow === 'supplier_quote') {
+      console.error(`[CRITICAL] Tentativa de chamar IA-Qualificacao com fluxo de fornecedor. Session:`, session);
+      throw new Error('Fluxo de fornecedor não pode acionar IA-Qualificacao');
+    }
     if (text && text.length > 0) {
       session = await qualificacao.atualizarEstado(text, session);
       await memoria.salvarSessao(chatId, session);

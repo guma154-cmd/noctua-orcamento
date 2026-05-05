@@ -1,4 +1,4 @@
-const { askGemini } = require("../services/ai");
+const ai = require("../services/ai");
 const { db } = require('../db/sqlite');
 
 /**
@@ -56,7 +56,7 @@ const gerarSugestoesDeAtualizacao = async (itensCotacao, produtosCanonicos) => {
     `;
 
     try {
-      const response = await askGemini(prompt, "Identifique correspondências de produtos e sugira atualizações de preço.");
+      const response = await ai.askGemini(prompt, "Identifique correspondências de produtos e sugira atualizações de preço.");
       
       if (!response) continue; // IA não retornou resposta
 
@@ -169,6 +169,7 @@ Formato de Saída (JSON):
   "fornecedor_nome": "Nome extraído aqui",
   "itens": [
     {
+      "item_codigo": "Código/SKU do fornecedor (se houver)",
       "descricao_bruta": "Câmera Bullet...",
       "quantidade": 1,
       "preco_unitario": 100.00,
@@ -184,7 +185,7 @@ Formato de Saída (JSON):
 Texto Bruto / Transcrição:
 ${textoBruto}`;
   
-  const response = await askGemini(prompt, "Responda apenas com o objeto JSON final, sem marcações markdown na medida do possível.");
+  const response = await ai.askGemini(prompt, "Responda apenas com o objeto JSON final, sem marcações markdown na medida do possível.");
   if (!response) return null;
   const jsonMatch = response.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
@@ -202,7 +203,8 @@ const renderizarRascunhoTelegram = (draftId, extraido) => {
   let msg = `[${draftId}] 📄 *Rascunho: ${extraido.fornecedor_nome || 'Desconhecido'}*\n\n`;
   if (extraido.itens) {
     extraido.itens.forEach((it, i) => {
-      msg += `🔹 ${it.quantidade}x ${it.descricao_bruta}\n    (Un: R$ ${it.preco_unitario} -> R$ ${it.preco_total})\n`;
+      const codeLabel = it.item_codigo ? `[\`${it.item_codigo}\`] ` : "";
+      msg += `🔹 ${it.quantidade}x ${codeLabel}${it.descricao_bruta}\n    (Un: R$ ${it.preco_unitario} -> R$ ${it.preco_total})\n`;
     });
   }
   msg += `\n💰 Total Lido: R$ ${extraido.total_identificado || 0}\n\n`;
@@ -212,4 +214,40 @@ const renderizarRascunhoTelegram = (draftId, extraido) => {
   return msg;
 };
 
-module.exports = { sugerirAtualizacaoPrecos, extrairCotaçãoEstruturada, renderizarRascunhoTelegram };
+async function handleSupplierIngestion(chatId, jsonText, session) {
+  let extractedData;
+  const memoria = require('./memoria');
+
+  if (session.flow_status === 'awaiting_supplier_name') {
+    extractedData = session.meta.temp_supplier_data || {};
+    extractedData.fornecedor_nome = jsonText;
+  } else {
+    try {
+      const cleanJson = jsonText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      extractedData = JSON.parse(cleanJson);
+    } catch (e) {
+      console.error("Erro no Parse JSON da cotação na Ingestion", e);
+      return { response: "Erro ao ler dados da cotação. Formato inválido." };
+    }
+  }
+
+  if (!extractedData.fornecedor_nome) {
+    session.meta.temp_supplier_data = extractedData;
+    session.flow_status = 'awaiting_supplier_name';
+    await memoria.salvarSessao(chatId, session);
+    return { response: "Qual o nome do fornecedor?" };
+  }
+
+  session.meta.temp_supplier_data = extractedData;
+  session.flow_status = 'awaiting_confirmation';
+  await memoria.salvarSessao(chatId, session);
+
+  const draftId = session.meta.draft_id || "TEMP";
+  const msg = renderizarRascunhoTelegram(draftId, extractedData);
+  const menus = require('../ui/telegram-menu');
+  const menu = menus.menuConfirmacaoFornecedor(draftId);
+
+  return { response: msg, keyboard: menu.keyboard };
+}
+
+module.exports = { sugerirAtualizacaoPrecos, extrairCotaçãoEstruturada, renderizarRascunhoTelegram, handleSupplierIngestion };

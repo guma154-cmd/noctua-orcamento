@@ -246,10 +246,15 @@ const renderizarProposta = (modelo, dados) => {
   const qtdNum = parseInt(rawQty) || 0;
   const labelCameras = qtdNum === 1 ? 'câmera' : 'câmeras';
 
+  const validade = new Date();
+  validade.setDate(validade.getDate() + 7);
+  const validadeStr = validade.toLocaleDateString('pt-BR');
+
   let texto = template
     .replace('{{cliente_nome}}', dados.escopo.nome_cliente || 'Cliente')
     .replace('{{local_instalacao}}', dados.escopo.perfil || dados.escopo.property_type || 'Não informado')
     .replace('{{data_orcamento}}', new Date().toLocaleDateString('pt-BR'))
+    .replace(/ID: `{{orcamento_id}}` \| /g, '') // Remove o ID interno da linha de cabeçalho da proposta
     .replace('{{orcamento_id}}', dados.orcamento_id)
     .replace('{{quantidade_cameras}}', `${qtdNum} ${labelCameras}`)
     .replace('{{descricao_cameras}}', camera.produto)
@@ -265,6 +270,9 @@ const renderizarProposta = (modelo, dados) => {
     .replace('{{valor_modelo_c}}', valorCompleto) // No modelo C, valorCompleto já desconta itens do cliente
     .replace('{{forma_pagamento}}', 'A combinar (Pix / Cartão)')
     .replace(/{{linha_extra_.*?}}/g, '');
+
+  texto += `\n\n⏳ *Validade da Proposta:* ${validadeStr} (7 dias)\n` +
+           `📌 *Nota:* Orçamento gerado via NOCTUA AIOX. Sujeito a vistoria técnica no local.`;
 
   return texto;
 };

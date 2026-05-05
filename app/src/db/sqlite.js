@@ -24,7 +24,7 @@ const initDb = () => {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`);
 
-      // Tabela de Orçamentos
+      // Tabela de OrÃ§amentos
       db.run(`CREATE TABLE IF NOT EXISTS orcamentos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         cliente_id INTEGER,
@@ -35,7 +35,37 @@ const initDb = () => {
         FOREIGN KEY(cliente_id) REFERENCES clientes(id)
       )`);
 
-      // === GOVERNANÇA DO CATÁLOGO NOCTUA (FASE 3 - ETAPA 1) ===
+      // Tabela de VersÃµes de OrÃ§amentos (Story 4.3)
+      db.run(`CREATE TABLE IF NOT EXISTS orcamentos_versoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        orcamento_id TEXT,
+        versao INTEGER,
+        payload TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
+
+      // Tabela de Timeline ImutÃ¡vel (Story 5.1)
+      db.run(`CREATE TABLE IF NOT EXISTS timeline_eventos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lead_id INTEGER,
+        evento TEXT,
+        payload_snapshot TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
+
+      // Tabela de PrÃ³ximas AÃ§Ãµes (Story 5.3)
+      db.run(`CREATE TABLE IF NOT EXISTS proximas_acoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lead_id INTEGER,
+        tipo TEXT, -- ligacao | reuniao | envio_proposta | visita | contrato | outro
+        descricao TEXT,
+        data_prevista DATETIME,
+        concluida INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(lead_id) REFERENCES orcamentos(id)
+      )`);
+
+      // === GOVERNANÃ‡A DO CATÃLOGO NOCTUA (FASE 3 - ETAPA 1) ===
       db.run(`CREATE TABLE IF NOT EXISTS catalogo_noctua (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sku TEXT UNIQUE,
@@ -96,14 +126,41 @@ const initDb = () => {
         preco_custo REAL
       )`);
 
+      // === BASE DE DADOS DE FORNECEDORES (NOCTUA) ===
+      db.run(`CREATE TABLE IF NOT EXISTS base_fornecedores_noctua (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fornecedor_nome TEXT,
+        item_codigo TEXT, -- SKU / Código do Fornecedor
+        marca TEXT,
+        categoria TEXT,
+        subcategoria TEXT,
+        modelo TEXT,
+        descricao_padronizada TEXT,
+        descricao_original TEXT,
+        unidade_medida TEXT,
+        preco_unitario REAL,
+        moeda TEXT,
+        origem_preco_tipo TEXT,
+        origem_preco_referencia TEXT,
+        data_coleta DATETIME,
+        confianca_extracao REAL,
+        status_registro TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
+
       // === MIGRAÇÕES FASE 1 NOCTUA (ADITIVAS) ===
       
-      // Colunas para a tabela de Orçamentos
+      // Colunas para a tabela de OrÃ§amentos
       const colunasOrcamento = [
         "status_noctua TEXT",
         "waiting_human INTEGER DEFAULT 0",
         "last_interaction_at DATETIME",
-        "metadata_json TEXT"
+        "metadata_json TEXT",
+        "confidence_score REAL",
+        "valor_total REAL",
+        "followup_count INTEGER DEFAULT 0",
+        "last_followup_at DATETIME",
+        "budget_model TEXT"
       ];
 
       colunasOrcamento.forEach(col => {

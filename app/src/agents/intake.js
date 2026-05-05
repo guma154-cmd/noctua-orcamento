@@ -1,4 +1,4 @@
-const { askGemini, processMultimodal, extractConsolidatedVision, extractConsolidatedPDF, transcribeAudio, sanitizeResponse } = require("../services/ai");
+const ai = require("../services/ai");
 const { MAX_AUDIO_DURATION_SECONDS } = require("../services/ai/policy/audio_policy");
 
 const extrairTextoBrutoPDF = (filePath) => {
@@ -26,20 +26,80 @@ const classificarIntencao = async (ctx) => {
     if (ctx.message.voice.duration > MAX_AUDIO_DURATION_SECONDS) {
       return { intent: "erro", content: `Áudio muito longo.` };
     }
-    const filePath = await downloadTelegramFile(ctx, ctx.message.voice.file_id);
-    text = await transcribeAudio(filePath);
+    const filePath = await module.exports.downloadTelegramFile(ctx, ctx.message.voice.file_id);
+    text = await ai.transcribeAudio(filePath);
   } else if (ctx.message.photo) {
     const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-    const filePath = await downloadTelegramFile(ctx, fileId);
-    text = await extractConsolidatedVision(filePath, "image/jpeg", "Extraia JSON de itens e preços.");
+    const fileDetails = ctx.message.photo[ctx.message.photo.length - 1];
+    let filePath;
+
+    try {
+      filePath = await module.exports.downloadTelegramFile(ctx, fileId);
+      console.log(`[Intake] Imagem recebida: ${fileId}, Tamanho: ${fileDetails.file_size} bytes, Path: ${filePath}`);
+
+      const promptJson = `Analise a imagem da cotação/orçamento e extraia os itens e preços no seguinte formato JSON OBRIGATÓRIO:
+{
+  "fornecedor_nome": "Nome do fornecedor (ou null se não achar)",
+  "itens": [
+    { 
+      "item_codigo": "Código/SKU do fornecedor (se houver)",
+      "descricao_bruta": "Nome do produto", 
+      "quantidade": 1, 
+      "preco_unitario": 150.00, 
+      "preco_total": 150.00 
+    }
+  ],
+  "total_identificado": 150.00
+}`;
+      text = await ai.processMultimodal(filePath, "image/jpeg", promptJson);
+    } catch (err) {
+      console.error(`[Intake] Falha Crítica na Extração de Visão para fileId: ${fileId}.`, {
+        error: err.message,
+        stack: err.stack,
+        filePath: filePath,
+        fileSize: fileDetails.file_size,
+        googleApiKey: process.env.GOOGLE_API_KEY ? 'Presente' : 'Ausente',
+      });
+      
+      let userMessage = `❌ Falha na extração: ${err.message}.`;
+      if (err.message.includes('API key not valid')) {
+        userMessage = '❌ Falha na extração: A chave de API do Gemini não é válida. Verifique o .env.';
+      } else if (fileDetails.file_size > 4 * 1024 * 1024) { // Gemini Vision limit is 4MB
+        userMessage = '❌ Falha na extração: A imagem é muito grande. Envie imagens menores que 4MB.';
+      } else if (err.message.includes('vazio')) {
+        userMessage = '❌ Falha na extração: Não foi possível extrair dados da imagem. Tente uma foto mais nítida e com melhor iluminação.';
+      }
+
+      return { intent: "erro", content: userMessage };
+    } finally {
+      const fs = require('fs');
+      if (filePath && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
   } else if (ctx.message.document && (ctx.message.document.mime_type === "application/pdf" || ctx.message.document.file_name?.toLowerCase().endsWith(".pdf"))) {
     const doc = ctx.message.document;
-    const filePath = await downloadTelegramFile(ctx, doc.file_id);
+    const filePath = await module.exports.downloadTelegramFile(ctx, doc.file_id);
     
     try {
       console.log("[Intake] Iniciando Extração Bruta Local...");
       const raw = extrairTextoBrutoPDF(filePath);
       
+      const promptJson = `Analise a imagem da cotação/orçamento e extraia os itens e preços no seguinte formato JSON OBRIGATÓRIO:
+{
+  "fornecedor_nome": "Nome do fornecedor (ou null se não achar)",
+  "itens": [
+    { 
+      "item_codigo": "Código/SKU do fornecedor (se houver)",
+      "descricao_bruta": "Nome do produto", 
+      "quantidade": 1, 
+      "preco_unitario": 150.00, 
+      "preco_total": 150.00 
+    }
+  ],
+  "total_identificado": 150.00
+}`;
+
       if (raw.length > 50) {
         console.log(`[Intake] Sucesso! Texto extraído (${raw.length} chars). Processando via IA...`);
         const prompt = `Analise este orçamento de CFTV e extraia os dados em JSON:
@@ -50,12 +110,11 @@ const classificarIntencao = async (ctx) => {
         }
         TEXTO: ${raw.substring(0, 12000)}`;
         
-        text = await askGemini(prompt, "Extrator JSON. Retorne apenas o código JSON.");
+        text = await ai.askGemini(prompt, "Extrator JSON. Retorne apenas o código JSON.");
       }
 
       if (!text || text.length < 50) {
-        console.warn("[Intake] Fallback para Squad de Visão...");
-        text = await extractConsolidatedPDF(filePath, "Extraia JSON.");
+        text = await ai.extractConsolidatedPDF(filePath, promptJson);
       }
     } catch (err) {
       console.error("[Intake] Erro PDF:", err.message);
@@ -67,9 +126,22 @@ const classificarIntencao = async (ctx) => {
 
   if (!text) return { intent: "erro", content: null };
 
+  let isExtractedData = false;
+  if (ctx.message.photo || ctx.message.document) {
+    // Limpa crases markdown antes de verificar se é JSON
+    const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    if (cleanedText.startsWith('{') || cleanedText.startsWith('[')) {
+       isExtractedData = true;
+    }
+  }
+
+  if (isExtractedData) {
+    return { intent: "input_fornecedor", content: text };
+  }
+
   const prompt = `Classifique: nova_solicitacao, input_fornecedor, ajuda, historico, comando_gestao, conversa_geral. Texto: "${text.substring(0, 500)}"`;
-  const response = await askGemini(prompt, "Classificador de intenções.");
-  const intent = sanitizeResponse(response, ["nova_solicitacao", "input_fornecedor", "ajuda", "historico", "comando_gestao", "conversa_geral"]);
+  const response = await ai.askGemini(prompt, "Classificador de intenções.");
+  const intent = ai.sanitizeResponse(response, ["nova_solicitacao", "input_fornecedor", "ajuda", "historico", "comando_gestao", "conversa_geral"]);
   
   return { intent: intent || "input_fornecedor", content: text };
 };
@@ -101,4 +173,4 @@ const downloadTelegramFile = async (ctx, fileId) => {
   });
 };
 
-module.exports = { classificarIntencao };
+module.exports = { classificarIntencao, downloadTelegramFile };

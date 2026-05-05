@@ -1,7 +1,7 @@
 const { db } = require("../db/sqlite");
 const { BITRATE_GBDAY, OVERHEAD_SISTEMA, TECH_TYPE, POE_MODE } = require("../catalog/technology-constants");
 const { DORI_LEVELS, DORI_RANGES, DORI_LABELS } = require("../catalog/dori-constants");
-const { calcRetentionDays } = require("../utils/storage-calculator");
+const { calcRetentionDays, calcHDForDays } = require("../utils/storage-calculator");
 const { selectNVR } = require("../utils/nvr-selector");
 const { selectCable } = require("../utils/cable-selector");
 
@@ -165,7 +165,7 @@ const DEFAULT_SCOPE = {
   external_count: undefined,
   recording_days: undefined,
   infra_status: undefined,
-  cable_total_m: 0,
+  cable_total_m: undefined,
   max_point_distance_m: 0,
   distance_alert_level: undefined, // none, above_90, above_100, unknown
   distance_source: 'total_only', // total_only, operator_confirmation, detailed
@@ -311,20 +311,22 @@ const calculateStorage = async (scope, cameraCount, isIP, session, resolution = 
   }
 
   // SEÇÃO: NOCTUA FORNECE HD (A / C)
-  const targetDays = parseInt(session.recording_days) || 15;
+  const targetDays = parseInt(session.recording_days) || parseInt(scope.recording_days) || 15;
   const bitrate = BITRATE_GBDAY[resolution] ?? BITRATE_GBDAY['2MP'];
   const consumoDiario = bitrate * cameraCount;
   const gbNecessario = (consumoDiario * targetDays) / (1 - OVERHEAD_SISTEMA);
   const tbRequired = gbNecessario / 1024;
 
-  let hdLabel = 'HD 1TB SkyHawk';
+  const hdLabel = calcHDForDays(targetDays, cameraCount, resolution);
   let defaultPrice = 350;
 
-  if (tbRequired <= 1) { hdLabel = 'HD 1TB SkyHawk'; defaultPrice = 350; }
-  else if (tbRequired <= 2) { hdLabel = 'HD 2TB SkyHawk'; defaultPrice = 520; }
-  else if (tbRequired <= 4) { hdLabel = 'HD 4TB SkyHawk'; defaultPrice = 850; }
-  else if (tbRequired <= 8) { hdLabel = 'HD 8TB SkyHawk'; defaultPrice = 1600; }
-  else { hdLabel = 'HD 10TB SkyHawk'; defaultPrice = 2200; }
+  if (tbRequired > 12) {
+    scope.incompatibilities.push('ALERT_MULTIPLE_HDS');
+    defaultPrice = 4400; // Preço para 2x 10TB como fallback
+  } else if (tbRequired > 8) { defaultPrice = 2200; 
+  } else if (tbRequired > 6) { defaultPrice = 1600; 
+  } else if (tbRequired > 4) { defaultPrice = 850; 
+  } else if (tbRequired > 2) { defaultPrice = 520; }
 
   const hdItem = await findItemWithFallback('HD', hdLabel, defaultPrice);
   
@@ -408,6 +410,7 @@ const generateTechnicalPayload = async (session) => {
   const scope = { 
     ...DEFAULT_SCOPE, 
     profile: session.property_type,
+    system_type: session.system_type || DEFAULT_SCOPE.system_type,
     incompatibilities: [],
     operational_flags: { ...DEFAULT_SCOPE.operational_flags },
     resolved_items: [],
@@ -415,10 +418,15 @@ const generateTechnicalPayload = async (session) => {
   };
 
   // 1. Definição de Tecnologia e PoE (V5)
-  const techType = mapTechType(session.system_type);
+  const techType = mapTechType(scope.system_type);
   const poeMode = mapPoEMode(session.poe_mode);
   const isIP = techType === TECH_TYPE.IP;
   const maxDistance = scope.max_point_distance_m || 30;
+
+  // 1.0 Cálculo Automático de Cabos (se ainda não estimado)
+  if (scope.estimated_cable_total_m === 0 && cameraCount > 0) {
+      scope.estimated_cable_total_m = cameraCount * 25;
+  }
 
   // 1.1 Resolução Baseada em DORI (V5.1)
   let resolution = "2MP";

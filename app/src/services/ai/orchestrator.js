@@ -72,9 +72,20 @@ class AIOrchestrator {
         const errorMsg = error.response ? `HTTP ${error.response.status}` : error.message;
         const isRateLimit = errorMsg.includes("429") || error.message.toLowerCase().includes("rate limit");
         const isJsonError = error.message.includes("JSON") || error.name === "SyntaxError" || error.code === "invalid_json";
-        
+        const isDecommissioned = error.message.toLowerCase().includes("decommissioned");
+
         console.warn(`[AI-Orchestrator][${correlation_id}] FALHA na tentativa ${currentAttempt} (${provider.name}): ${errorMsg}`);
         
+        if (isDecommissioned) {
+          console.warn(`[AI-Orchestrator][${correlation_id}] Modelo ${config.params?.model} está descontinuado. Tentando o próximo provedor.`);
+          attempts.push({ 
+            provider: provider.name, 
+            error: `Model Decommissioned: ${config.params?.model}`, 
+            status: "failed_recoverable" 
+          });
+          continue; // Pula para o próximo provedor
+        }
+
         if (isRateLimit) {
           console.log(`[AI-Orchestrator][${correlation_id}] Rate Limit detectado. Aguardando 2s antes do próximo provedor...`);
           await sleep(2000); // Backoff simples

@@ -23,5 +23,9 @@
     "telegraf": "^4.16.3",
     "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "chai": "^6.2.2",
+    "sinon": "^21.1.2"
   }
 }

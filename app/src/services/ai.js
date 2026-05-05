@@ -28,7 +28,7 @@ const processMultimodal = async (filePath, mimeType, prompt) => {
   return result ? result.content : null;
 };
 
-const { getProviderConfig } = require("./ai/matrix");
+const { getProviderConfig, ELIGIBILITY_MATRIX } = require("./ai/matrix");
 
 /**
  * EXTRAÇÃO ROBUSTA (SQUAD DE VISÃO)
@@ -71,12 +71,29 @@ const extractConsolidatedVision = async (filePath, mimeType, structuredPrompt) =
     Você é um juiz de dados fiscais (CFTV). Recebi extrações de múltiplos modelos de visão.
     Alguns modelos podem ter falhado ou ignorado itens da tabela.
     
-    TAREFA: Compare as extrações abaixo e gere um JSON ÚNICO e CONSOLIDADO que contenha TODOS os itens encontrados, priorizando valores numéricos claros.
-    
+    TAREFA: Compare as extrações abaixo e gere um JSON ÚNICO e CONSOLIDADO.
+    ATENÇÃO CRÍTICA: As extrações representam o MESMO documento lido por modelos diferentes.
+    NÃO DUPLIQUE itens e NÃO SOME quantidades de itens iguais. Se um item aparecer nas várias extrações com quantidade 1, a quantidade final DEVE ser 1.
+    Transcreva os valores exatos da tabela.
+    FORMATO JSON OBRIGATÓRIO:
+    {
+      "fornecedor_nome": "Nome do fornecedor (ou null se não achar)",
+      "itens": [
+        { 
+          "item_codigo": "Código/SKU do fornecedor (se houver)",
+          "descricao_bruta": "Nome do produto", 
+          "quantidade": 1, 
+          "preco_unitario": 150.00, 
+          "preco_total": 150.00 
+        }
+      ],
+      "total_identificado": 150.00
+    }
+
     Resultados dos Modelos:
     ${validResults.map((res, i) => `[MODELO ${i+1}]:\n${res}`).join("\n\n")}
 
-    JSON FINAL CONSOLIDADO:
+    JSON FINAL CONSOLIDADO OBRIGATÓRIO:
   `;
 
   console.log(`[AI-Service] Consolidando via Juiz (Prompt de ${consolidationPrompt.length} chars)...`);
@@ -107,12 +124,8 @@ const transcribeAudio = async (filePath) => {
 const extractConsolidatedPDF = async (filePath, structuredPrompt) => {
   console.log("[AI-Service] Iniciando extração de PDF...");
   
-  const squadConfigs = [
-    getProviderConfig("PDF", 1), // Gemini Primary
-    getProviderConfig("PDF", 3), // OpenRouter (Geralmente modelos diferentes)
-    getProviderConfig("PDF", 2), // Gemini Fallback
-    getProviderConfig("PDF", 6)  // OpenAI
-  ].filter(c => c !== null);
+  const squadConfigs = ELIGIBILITY_MATRIX["PDF"]
+    .sort((a, b) => a.priority - b.priority);
 
   const validResults = [];
 

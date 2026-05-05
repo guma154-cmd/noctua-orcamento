@@ -44,8 +44,8 @@ class TechnicalAuditor {
   async audit(session, payload) {
     let rawResponse = "";
     try {
-      // 1. Validar campos críticos
-      const missing = REQUIRED_FIELDS.filter(f => !payload[f]);
+      // 1. Validar campos críticos (Evita erro de falsy com 0)
+      const missing = REQUIRED_FIELDS.filter(f => payload[f] === undefined || payload[f] === null);
       if (missing.length > 0) return this.getIncompleteResponse(missing);
 
       // 2. Contexto simplificado (evita confusão de contagem)

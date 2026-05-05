@@ -2,24 +2,19 @@
  * NOCTUA CONSTANTS - Business States & Rules
  */
 const STATUS_NOCTUA = {
-  // Fase de Entrada e Coleta
+  // --- PIPELINE DE VENDAS (Story 5.1) ---
+  LEAD: 'lead',
+  ORCAMENTO: 'orcamento',
+  NEGOCIACAO: 'negociacao',
+  WON: 'fechado',
+  LOST: 'perdido',
+
+  // Fase de Entrada e Coleta (Legado/Suporte)
   INTAKE: 'intake_em_andamento',
   QUALIFIED: 'lead_qualificado',
-  
-  // Fase de Processamento
   PROCESSING: 'processando_orcamento',
-  
-  // Fase Comercial
   PROPOSAL_SENT: 'proposta_enviada',
   WAITING_CLIENT: 'aguardando_cliente',
-  
-  // Fase de Follow-up
-  FOLLOWUP_1: 'followup_24h',
-  FOLLOWUP_2: 'followup_48h',
-  
-  // Encerramento
-  WON: 'fechado_ganho',
-  LOST: 'fechado_perdido',
   CANCELLED: 'cancelado'
 };
 
