@@ -60,6 +60,10 @@ const BTN = {
   VOLTAR:            { text: '⬅ Voltar',               callback_data: 'menu:voltar' },
   MENU:              { text: '🏠 Menu',                 callback_data: 'menu:main' },
   VOLTAR_MENU:       { text: '🏠 Menu Principal',          callback_data: 'menu:main' },
+  
+  // Menu Consulta
+  CONSULTA_FORNECEDORES: { text: '🏢 Base de Fornecedores', callback_data: 'db:fornecedores' },
+  CONSULTA_CLIENTES:     { text: '👥 Base de Clientes',     callback_data: 'db:clientes' },
 };
 
 // ────────────────────────
@@ -269,10 +273,21 @@ const menuRevisaoOrcamento = (resumo) => {
 };
 
 /**
- * Menu de confirmaÃ§Ã£o de reset de orÃ§amento.
+ * Menu de confirmação de retorno ao menu principal.
+ */
+const menuConfirmacaoMenu = () => {
+  const header = `⚠️ *CONFIRMAÇÃO DE RETORNO*\n\nTem certeza que deseja interromper o fluxo atual e voltar ao menu principal?`;
+  const keyboard = Markup.inlineKeyboard([
+    [{ text: '✅ Sim, Voltar ao Menu', callback_data: 'menu:confirm_back' }, { text: '❌ Não, Continuar', callback_data: 'menu:cancel_back' }]
+  ]);
+  return { text: header, keyboard, parse_mode: 'Markdown' };
+};
+
+/**
+ * Menu de confirmação de reset de orçamento.
  */
 const menuConfirmacaoReset = () => {
-  const header = `âš ï¸ *CONFIRMAÃ‡ÃƒO DE CANCELAMENTO*\n\nTem certeza que deseja cancelar e apagar este orÃ§amento?\n\n_Esta aÃ§Ã£o nÃ£o pode ser desfeita._`;       
+  const header = `⚠️ *CONFIRMAÇÃO DE CANCELAMENTO*\n\nTem certeza que deseja cancelar e apagar este orçamento?\n\n_Esta ação não pode ser desfeita._`;       
   const keyboard = Markup.inlineKeyboard([
     LINHAS.confirmacao_reset
   ]);
@@ -280,12 +295,12 @@ const menuConfirmacaoReset = () => {
 };
 
 /**
- * Menu de DecisÃ£o de Auditoria (Story 4.3)
+ * Menu de Decisão de Auditoria (Story 4.3)
  */
 const menuAuditoriaRafael = (orcId, canAutoSend = false) => {
-  const header = `ðŸ“Š *RELATÃ“RIO INTERNO - ORÃ‡AMENTO [${orcId}]*\n\n` +
+  const header = `📊 *RELATÓRIO INTERNO - ORÇAMENTO [${orcId}]*\n\n` +
                  `Rafael, revise os detalhes técnicos e financeiros abaixo.\n` +
-                 (canAutoSend ? `âœ… *CONFIANÃ‡A ALTA:* Este orÃ§amento pode ser enviado automaticamente.` : `âš ï¸ *REVISÃƒO OBRIGATÃ“RIA:* ConfianÃ§a baixa ou valor elevado.`);
+                 (canAutoSend ? `✅ *CONFIANÇA ALTA:* Este orçamento pode ser enviado automaticamente.` : `⚠️ *REVISÃO OBRIGATÓRIA:* Confiança baixa ou valor elevado.`);
 
   const buttons = canAutoSend 
     ? [[BTN.ENVIAR_AGORA(orcId)], [BTN.EDITAR_ORC(orcId), BTN.CANCELAR_ORC(orcId)]]
@@ -305,6 +320,19 @@ const menuConfirmacaoFornecedor = (draftId) => ({
   }
 });
 
+/**
+ * Menu de Consulta ao Banco de Dados.
+ */
+const menuConsultaBanco = () => {
+  const header = `🔍 *Central de Consultas*\n\nQual banco de dados você deseja acessar?`;
+  const keyboard = Markup.inlineKeyboard([
+    [BTN.CONSULTA_FORNECEDORES],
+    [BTN.CONSULTA_CLIENTES],
+    [BTN.VOLTAR_MENU]
+  ]);
+  return { text: header, keyboard, parse_mode: 'Markdown' };
+};
+
 module.exports = {
   BTN,
   menuPrincipal,
@@ -318,5 +346,7 @@ module.exports = {
   menuRevisaoOrcamento,
   menuSelecaoModeloInicial,
   menuAuditoriaRafael,
-  menuConfirmacaoFornecedor
+  menuConfirmacaoFornecedor,
+  menuConsultaBanco,
+  menuConfirmacaoMenu
 };

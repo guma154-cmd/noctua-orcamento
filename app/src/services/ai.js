@@ -166,6 +166,24 @@ const extractConsolidatedPDF = async (filePath, structuredPrompt) => {
 };
 
 /**
+ * Extrai o JSON de uma string que pode conter texto conversacional
+ */
+const sanitizeJSON = (text) => {
+  if (!text) return null;
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return text.substring(firstBrace, lastBrace + 1);
+  }
+  const firstBracket = text.indexOf('[');
+  const lastBracket = text.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+    return text.substring(firstBracket, lastBracket + 1);
+  }
+  return text.trim();
+};
+
+/**
  * Limpa e padroniza a resposta da IA
  */
 const sanitizeResponse = (text, allowedKeywords = []) => {
@@ -186,6 +204,7 @@ module.exports = {
   extractConsolidatedVision,
   extractConsolidatedPDF,
   transcribeAudio, 
-  sanitizeResponse 
+  sanitizeResponse,
+  sanitizeJSON
 };
 

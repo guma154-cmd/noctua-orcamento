@@ -169,7 +169,7 @@ Formato de Saída (JSON):
   "fornecedor_nome": "Nome extraído aqui",
   "itens": [
     {
-      "item_codigo": "Código/SKU do fornecedor (se houver)",
+      "codigo_fornecedor": "Código/SKU do fornecedor (se houver)",
       "descricao_bruta": "Câmera Bullet...",
       "quantidade": 1,
       "preco_unitario": 100.00,
@@ -203,7 +203,9 @@ const renderizarRascunhoTelegram = (draftId, extraido) => {
   let msg = `[${draftId}] 📄 *Rascunho: ${extraido.fornecedor_nome || 'Desconhecido'}*\n\n`;
   if (extraido.itens) {
     extraido.itens.forEach((it, i) => {
-      const codeLabel = it.item_codigo ? `[\`${it.item_codigo}\`] ` : "";
+      // Prioriza o SKU Noctua (se já gerado) ou exibe o código original
+      const sku = it.sku_noctua || it.item_codigo || it.codigo_fornecedor;
+      const codeLabel = sku ? `[\`${sku}\`] ` : "";
       msg += `🔹 ${it.quantidade}x ${codeLabel}${it.descricao_bruta}\n    (Un: R$ ${it.preco_unitario} -> R$ ${it.preco_total})\n`;
     });
   }
@@ -223,8 +225,27 @@ async function handleSupplierIngestion(chatId, jsonText, session) {
     extractedData.fornecedor_nome = jsonText;
   } else {
     try {
-      const cleanJson = jsonText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const ai = require('../services/ai');
+      const cleanJson = ai.sanitizeJSON(jsonText);
       extractedData = JSON.parse(cleanJson);
+
+      // Geração de SKU Noctua (Catálogo Próprio)
+      if (extractedData.itens) {
+        extractedData.itens = extractedData.itens.map(item => {
+          const baseString = (item.marca && item.modelo) 
+            ? `${item.marca}-${item.modelo}`
+            : item.descricao_bruta;
+
+          const slug = baseString.toLowerCase()
+              .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+              .replace(/[^a-z0-9]/g, "-")
+              .replace(/-+/g, "-")
+              .replace(/^-|-$/g, "");
+
+          item.sku_noctua = `NCT-${slug.substring(0, 25).toUpperCase()}`;
+          return item;
+        });
+      }
     } catch (e) {
       console.error("Erro no Parse JSON da cotação na Ingestion", e);
       return { response: "Erro ao ler dados da cotação. Formato inválido." };

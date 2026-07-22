@@ -84,53 +84,77 @@ const handleTelegramInteraction = async (ctx) => {
   let session = await memoria.buscarSessao(chatId) || { ...qualificacao.DEFAULT_STATE };
 
   try {
-    if (ctx.message.text) {
-      const cleanText = ctx.message.text.trim();
+    if (ctx.message.text || ctx.message.voice) {
+      let term = "";
+      if (ctx.message.text) {
+        term = ctx.message.text.trim();
+      } else if (ctx.message.voice) {
+        const resultIntake = await intake.classificarIntencao(ctx);
+        if (resultIntake.intent === 'erro') {
+          return ctx.reply(resultIntake.content || "❌ Erro ao processar voz.");
+        }
+        term = resultIntake.content;
+      }
 
-      // STORY 5.3: CAPTURAR DESCRIÇÃO DE PRÓXIMA AÇÃO
+      // 1. Interceptadores de Estado (Captura de Texto/Voz)
+      const cleanTerm = term.toLowerCase().trim();
+      const isGlobalCommand = ['menu', '/menu', 'reset', 'reiniciar', 'limpar', 'voltar', '/start', 'start'].includes(cleanTerm);
+
+      if (session.flow_status === 'awaiting_db_search' && !isGlobalCommand) {
+        const target = session.meta.search_target;
+        if (target === 'fornecedores') {
+          const FornecedorRepository = require('./services/FornecedorRepository');
+          const results = await FornecedorRepository.searchByTerm(term);
+          if (!results || results.length === 0) return ctx.reply(`❌ Nenhum item encontrado para "${term}".`);
+          let msg = `🔎 *Resultados Fornecedores: ${term}*\n\n`;
+          results.forEach(it => {
+            msg += `📦 *${it.sku_noctua}*\n💰 *R$ ${it.preco_unitario.toFixed(2)}* - ${it.fornecedor_nome}\n\n`;
+          });
+          return ctx.reply(msg, { parse_mode: 'Markdown' });
+        }
+        if (target === 'clientes') {
+          const { LeadsRepository } = require('./services/LeadsRepository');
+          const results = await LeadsRepository.buscarPorTermo(term);
+          if (!results || results.length === 0) return ctx.reply(`❌ Nenhum cliente encontrado para "${term}".`);
+          let msg = `🔎 *Resultados Clientes: ${term}*\n\n`;
+          results.forEach(it => {
+            const dataStr = it.created_at ? new Date(it.created_at).toLocaleDateString('pt-BR') : 'Sem data';
+            msg += `👤 *${it.nome}* (${it.contato || 'S/C'})\n`;
+            if (it.orcamento_id) msg += `📄 Orçamento #${it.orcamento_id} - ${it.status_noctua.toUpperCase()} (R$ ${it.valor_total || 0})\n`;
+            msg += `📅 _${dataStr}_\n\n`;
+          });
+          return ctx.reply(msg, { parse_mode: 'Markdown' });
+        }
+      }
+
       if (session.meta && session.meta.awaiting_next_action_desc) {
         const { tipo, id } = session.meta.awaiting_next_action_desc;
         const { LeadsRepository } = require('./services/LeadsRepository');
-        
-        await LeadsRepository.definirProximaAcao(id, {
-            tipo,
-            descricao: cleanText,
-            data_prevista: new Date().toISOString() // Simplificado para o MVP (hoje)
-        });
-
+        await LeadsRepository.definirProximaAcao(id, { tipo, descricao: term, data_prevista: new Date().toISOString() });
         delete session.meta.awaiting_next_action_desc;
         await memoria.salvarSessao(chatId, session);
-        return ctx.reply(`âœ… PrÃ³xima aÃ§Ã£o definida para o lead #${id}:
-*${tipo.toUpperCase()}* - ${cleanText}`, { parse_mode: 'Markdown' });
+        return ctx.reply(`✅ Próxima ação definida para o lead #${id}:\n*${tipo.toUpperCase()}* - ${term}`, { parse_mode: 'Markdown' });
       }
+
       if (session.meta && session.meta.awaiting_name_for_draft) {
         const draftId = session.meta.awaiting_name_for_draft;
-        const newName = ctx.message.text.trim();
-        await memoria.atualizarNomeFornecedorCotacao(draftId, newName);
+        await memoria.atualizarNomeFornecedorCotacao(draftId, term);
         delete session.meta.awaiting_name_for_draft;
         await memoria.salvarSessao(chatId, session);
-        return ctx.reply(`✅ Nome atualizado para: *${newName}*`, { parse_mode: 'Markdown' });
+        return ctx.reply(`✅ Nome atualizado para: *${term}*`, { parse_mode: 'Markdown' });
       }
 
       if (session.meta && session.meta.awaiting_supplier_name) {
-        const supplierName = ctx.message.text.trim();
-        const { extracted_supplier_data } = session.meta;
-        
-        const normalizedItems = await fornecedor.normalizeItems(extracted_supplier_data, supplierName);
+        const normalizedItems = await fornecedor.normalizeItems(session.meta.temp_supplier_data, term);
         session.meta.normalized_supplier_items = normalizedItems;
         delete session.meta.awaiting_supplier_name;
-        delete session.meta.extracted_supplier_data;
         await memoria.salvarSessao(chatId, session);
-        
         const summary = fornecedor.createSummary(normalizedItems);
         const menu = menus.menuConfirmacaoFornecedor(session.meta.draft_id);
-        
-        return ctx.reply(`${summary}
-
-O que você deseja fazer?`, { reply_markup: menu.keyboard });
+        return ctx.reply(`${summary}\n\nO que você deseja fazer?`, { reply_markup: menu.keyboard });
       }
 
-      messageContent.text = cleanText;
+      messageContent.text = term;
     } else {
       const resultIntake = await intake.classificarIntencao(ctx);
       if (resultIntake.intent === 'erro') {
@@ -261,17 +285,24 @@ ${propostaTextual}`, { parse_mode: 'Markdown' });
       const itens = rawData.itens || [];
 
       const normalizedItems = itens.map(item => {
-         // Se nÃ£o veio código, geramos um slug determinístico baseado na descrição bruta
-         const generatedCode = item.item_codigo || 
-           item.descricao_bruta.toLowerCase()
+         // Geramos nosso próprio SKU Noctua (Determinístico)
+         // Prioridade: Marca + Modelo, senão Descrição
+         const baseString = (item.marca && item.modelo) 
+           ? `${item.marca}-${item.modelo}`
+           : item.descricao_bruta;
+
+         const slug = baseString.toLowerCase()
              .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove acentos
-             .replace(/[^a-z0-9]/g, "-") // Troca tudo que nÃ£o Ã© letra/numero por -
+             .replace(/[^a-z0-9]/g, "-") // Troca tudo que não é letra/numero por -
              .replace(/-+/g, "-") // Remove duplicatas de -
-             .substring(0, 20); // Limita o tamanho
+             .replace(/^-|-$/g, ""); // Remove hífens no início/fim
+
+         const skuNoctua = `NCT-${slug.substring(0, 25).toUpperCase()}`;
 
          return {
             fornecedor_nome: fornecedorNome,
-            item_codigo: generatedCode,
+            sku_noctua: skuNoctua,
+            codigo_fornecedor: item.codigo_fornecedor || null,
             marca: item.marca || null,
             categoria: item.categoria || null,
             subcategoria: item.subcategoria || null,
@@ -313,16 +344,65 @@ ${propostaTextual}`, { parse_mode: 'Markdown' });
     // 2. Mapeamento de cliques do menu principal
     if (data.startsWith('menu:')) {
       const action = data.split(':')[1];
+      
+      if (action === 'consultar') {
+        const menus = require('./ui/telegram-menu');
+        const menu = menus.menuConsultaBanco();
+        return ctx.editMessageText(menu.text, { 
+          parse_mode: 'Markdown', 
+          reply_markup: menu.keyboard.reply_markup 
+        });
+      }
+
       const textMap = { 
         novo_orcamento: 'novo_orcamento', 
         continuar_orcamento: 'continuar_orcamento', 
         salvar_cotacao: 'salvar_cotacao', 
-        consultar: 'consultar', 
         limpar: 'limpar', 
         main: 'menu' 
       };
       const result = await dialogueEngine.process(chatId, { text: textMap[action] || action, type: 'text' });
       return sendResult(ctx, result);
+    }
+
+    if (data === 'db:fornecedores') {
+      const session = await memoria.buscarSessao(chatId) || {};
+      session.flow_status = 'awaiting_db_search';
+      session.meta = session.meta || {};
+      session.meta.search_target = 'fornecedores';
+      await memoria.salvarSessao(chatId, session);
+
+      return ctx.editMessageText(
+        "🏢 *Base de Fornecedores Noctua*\n\n" +
+        "Digite o que deseja buscar ou **mande um áudio** descrevendo o produto.\n\n" +
+        "_Ex: /consultar intelbras ou apenas 'intelbras'_",
+        { 
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[{ text: '⬅ Voltar', callback_data: 'menu:consultar' }]]
+          }
+        }
+      );
+    }
+
+    if (data === 'db:clientes') {
+      const session = await memoria.buscarSessao(chatId) || {};
+      session.flow_status = 'awaiting_db_search';
+      session.meta = session.meta || {};
+      session.meta.search_target = 'clientes';
+      await memoria.salvarSessao(chatId, session);
+
+      return ctx.editMessageText(
+        "👥 *Base de Clientes Noctua*\n\n" +
+        "Digite o nome do cliente ou **mande um áudio** para buscar.\n\n" +
+        "_Ex: Rafael ou 'Procurar orçamentos do Rafael'_",
+        { 
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[{ text: '⬅ Voltar', callback_data: 'menu:consultar' }]]
+          }
+        }
+      );
     }
 
 
@@ -540,6 +620,33 @@ bot.command('fornecedores', async (ctx) => {
     }
 });
 
+bot.command('consultar', async (ctx) => {
+  const term = ctx.message.text.replace('/consultar', '').trim();
+  if (!term) return ctx.reply('🔍 Por favor, digite o que deseja buscar. Ex: `/consultar intelbras`', { parse_mode: 'Markdown' });
+
+  try {
+    const FornecedorRepository = require('./services/FornecedorRepository');
+    const results = await FornecedorRepository.searchByTerm(term);
+
+    if (!results || results.length === 0) {
+      return ctx.reply(`❌ Nenhum item encontrado para "${term}" na base de fornecedores.`);
+    }
+
+    let msg = `🔎 *Resultados para: ${term}*\n_(Ordenado por menor preço)_\n\n`;
+    results.forEach(it => {
+      const dataStr = new Date(it.data_coleta).toLocaleDateString('pt-BR');
+      msg += `📦 *${it.sku_noctua}*\n`;
+      msg += `💰 *R$ ${it.preco_unitario.toFixed(2)}* - ${it.fornecedor_nome} (${dataStr})\n`;
+      msg += `📝 _${it.descricao_original.substring(0, 50)}..._\n\n`;
+    });
+
+    ctx.reply(msg, { parse_mode: 'Markdown' });
+  } catch (err) {
+    console.error('[Search Error]:', err);
+    ctx.reply('❌ Erro ao consultar o banco de dados.');
+  }
+});
+
 bot.on('callback_query', async (ctx, next) => {
   const data = ctx.callbackQuery.data;
   
@@ -574,6 +681,8 @@ Agora digite a *DESCRIÃ‡ÃƒO* da aÃ§Ã£o e a *DATA* (ex: Ligar para Rafae
     }
   }
 
+  const chatId = ctx.from.id;
+
   // 2. Mapeamento de cliques do menu principal
   if (data.startsWith('menu:')) {
     const action = data.split(':')[1];
@@ -592,7 +701,6 @@ Agora digite a *DESCRIÃ‡ÃƒO* da aÃ§Ã£o e a *DATA* (ex: Ligar para Rafae
   // 3. Encaminhamento resiliente para o DialogueEngine
   const result = await dialogueEngine.process(chatId, { text: data, type: 'text' });
   return sendResult(ctx, result);
-
 });
 
 bot.on(['message', 'photo', 'document', 'voice'], async (ctx) => {

@@ -130,7 +130,8 @@ const initDb = () => {
       db.run(`CREATE TABLE IF NOT EXISTS base_fornecedores_noctua (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         fornecedor_nome TEXT,
-        item_codigo TEXT, -- SKU / Código do Fornecedor
+        sku_noctua TEXT, -- Nosso código interno (Gerado)
+        codigo_fornecedor TEXT, -- Código original no documento
         marca TEXT,
         categoria TEXT,
         subcategoria TEXT,
@@ -179,6 +180,19 @@ const initDb = () => {
         }
       });
 
+      // Migrações para base_fornecedores_noctua (Adição de SKUs)
+      const colunasBaseForn = [
+        "sku_noctua TEXT",
+        "codigo_fornecedor TEXT"
+      ];
+      colunasBaseForn.forEach(col => {
+        db.run(`ALTER TABLE base_fornecedores_noctua ADD COLUMN ${col}`, (err) => {
+          if (err && !err.message.includes("duplicate column name")) {
+            console.warn(`[DB Migration] Aviso na coluna base_fornecedores_noctua.${col.split(' ')[0]}:`, err.message);
+          }
+        });
+      });
+
       // Finalização bem-sucedida do Promise
       db.serialize(() => {
         resolve();
@@ -187,4 +201,6 @@ const initDb = () => {
   });
 };
 
-module.exports = { db, initDb };
+const getDb = () => db;
+
+module.exports = { db, initDb, getDb };

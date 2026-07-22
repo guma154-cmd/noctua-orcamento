@@ -42,8 +42,10 @@ const classificarIntencao = async (ctx) => {
   "fornecedor_nome": "Nome do fornecedor (ou null se não achar)",
   "itens": [
     { 
-      "item_codigo": "Código/SKU do fornecedor (se houver)",
-      "descricao_bruta": "Nome do produto", 
+      "codigo_fornecedor": "Código/SKU original do fornecedor (se houver)",
+      "descricao_bruta": "Nome do produto completo", 
+      "marca": "Fabricante (Intelbras, Hikvision, etc)",
+      "modelo": "Modelo técnico do produto",
       "quantidade": 1, 
       "preco_unitario": 150.00, 
       "preco_total": 150.00 
@@ -77,8 +79,42 @@ const classificarIntencao = async (ctx) => {
         fs.unlinkSync(filePath);
       }
     }
-  } else if (ctx.message.document && (ctx.message.document.mime_type === "application/pdf" || ctx.message.document.file_name?.toLowerCase().endsWith(".pdf"))) {
+  } else if (ctx.message.document) {
     const doc = ctx.message.document;
+    const isImage = doc.mime_type?.startsWith('image/') || 
+                    ['.jpg', '.jpeg', '.png', '.webp'].some(ext => doc.file_name?.toLowerCase().endsWith(ext));
+    const isPDF = doc.mime_type === "application/pdf" || doc.file_name?.toLowerCase().endsWith(".pdf");
+
+    if (isImage) {
+      const fileId = doc.file_id;
+      let filePath;
+      try {
+        filePath = await module.exports.downloadTelegramFile(ctx, fileId);
+        const promptJson = `Analise a imagem da cotação/orçamento e extraia os itens e preços no seguinte formato JSON OBRIGATÓRIO:
+{
+  "fornecedor_nome": "Nome do fornecedor (ou null se não achar)",
+  "itens": [
+    { 
+      "codigo_fornecedor": "Código/SKU original do fornecedor (se houver)",
+      "descricao_bruta": "Nome do produto completo", 
+      "marca": "Fabricante (Intelbras, Hikvision, etc)",
+      "modelo": "Modelo técnico do produto",
+      "quantidade": 1, 
+      "preco_unitario": 150.00, 
+      "preco_total": 150.00 
+    }
+  ],
+  "total_identificado": 150.00
+}`;
+        text = await ai.processMultimodal(filePath, doc.mime_type || "image/jpeg", promptJson);
+      } catch (err) {
+        console.error(`[Intake] Falha na Extração de Imagem (Documento): ${err.message}`);
+        return { intent: "erro", content: "❌ Falha ao processar imagem enviada como documento." };
+      } finally {
+        const fs = require('fs');
+        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
+    } else if (isPDF) {
     const filePath = await module.exports.downloadTelegramFile(ctx, doc.file_id);
     
     try {
@@ -90,8 +126,10 @@ const classificarIntencao = async (ctx) => {
   "fornecedor_nome": "Nome do fornecedor (ou null se não achar)",
   "itens": [
     { 
-      "item_codigo": "Código/SKU do fornecedor (se houver)",
-      "descricao_bruta": "Nome do produto", 
+      "codigo_fornecedor": "Código/SKU original do fornecedor (se houver)",
+      "descricao_bruta": "Nome do produto completo", 
+      "marca": "Fabricante (Intelbras, Hikvision, etc)",
+      "modelo": "Modelo técnico do produto",
       "quantidade": 1, 
       "preco_unitario": 150.00, 
       "preco_total": 150.00 
@@ -122,6 +160,7 @@ const classificarIntencao = async (ctx) => {
 
     const fs = require('fs');
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
   }
 
   if (!text) return { intent: "erro", content: null };

@@ -194,6 +194,26 @@ class LeadsRepository {
       });
     });
   }
+  /**
+   * Busca clientes e seus orçamentos por termo (nome ou contato).
+   */
+  static async buscarPorTermo(termo) {
+    return new Promise((resolve, reject) => {
+      const query = `
+        SELECT c.nome, c.contato, o.id as orcamento_id, o.status_noctua, o.valor_total, o.created_at
+        FROM clientes c
+        LEFT JOIN orcamentos o ON c.id = o.cliente_id
+        WHERE c.nome LIKE ? OR c.contato LIKE ?
+        ORDER BY o.created_at DESC
+        LIMIT 10
+      `;
+      const searchPattern = `%${termo}%`;
+      db.all(query, [searchPattern, searchPattern], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
 }
 
 module.exports = { LeadsRepository, PIPELINE_STATES, EVENT_TYPES };

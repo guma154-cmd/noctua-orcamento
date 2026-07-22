@@ -81,9 +81,12 @@ class DialogueEngine {
     }
 
     if (isMenu) {
-      console.log(`[Engine] Retornando ao menu principal via comando: ${chatId}`);
-      await memoria.limparSessao(chatId);
-      return await this.showMainMenu(chatId, { ...qualificacao.getDefaultState() });
+      console.log(`[Engine] Solicitação de menu - aguardando confirmação: ${chatId}`);
+      session.prev_flow_status = session.flow_status; 
+      session.flow_status = 'awaiting_menu_confirmation';
+      await memoria.salvarSessao(chatId, session);
+      const menu = menus.menuConfirmacaoMenu();
+      return { response: menu.text, keyboard: menu.keyboard, status: 'awaiting_menu_confirmation' };
     }
 
     if (isBack) {
@@ -163,6 +166,27 @@ class DialogueEngine {
         } else {
            const menuReset = menus.menuConfirmacaoReset();
            return { response: "Por favor, escolha uma das opções:", keyboard: menuReset.keyboard, status: 'awaiting_reset_confirmation' };
+        }
+      }
+
+      // 1.0.1 Menu Confirmation
+      if (session.flow_status === 'awaiting_menu_confirmation') {
+        const confirm = cleanText === 'confirm_back' || cleanText.includes('sim');
+        const cancel = cleanText === 'cancel_back' || cleanText.includes('não') || cleanText.includes('nao');
+
+        if (confirm) {
+           console.log(`[Engine] Retorno ao menu confirmado para: ${chatId}`);
+           await memoria.limparSessao(chatId);
+           return await this.showMainMenu(chatId, { ...qualificacao.getDefaultState() });
+        } else if (cancel) {
+           console.log(`[Engine] Retorno ao menu cancelado para: ${chatId}`);
+           session.flow_status = session.prev_flow_status || 'idle';
+           await memoria.salvarSessao(chatId, session);
+           // Se tiver pergunta pendente, o continueFlow vai reapresentar
+           return await this.continueFlow(chatId, "", session, 'smalltalk');
+        } else {
+           const menu = menus.menuConfirmacaoMenu();
+           return { response: "Por favor, escolha uma das opções:", keyboard: menu.keyboard, status: 'awaiting_menu_confirmation' };
         }
       }
 

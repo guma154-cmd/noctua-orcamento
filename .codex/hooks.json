@@ -1,0 +1,108 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node 'C:\\Users\\rafae\\OneDrive\\Documentos\\AGENTES_PESSOAIS\\noctua-orcamento\\.codex\\hooks\\gsd-prompt-guard.js'",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node 'C:\\Users\\rafae\\OneDrive\\Documentos\\AGENTES_PESSOAIS\\noctua-orcamento\\.codex\\hooks\\gsd-read-guard.js'",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node 'C:\\Users\\rafae\\OneDrive\\Documentos\\AGENTES_PESSOAIS\\noctua-orcamento\\.codex\\hooks\\gsd-workflow-guard.js'",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash 'C:\\Users\\rafae\\OneDrive\\Documentos\\AGENTES_PESSOAIS\\noctua-orcamento\\.codex\\hooks\\gsd-validate-commit.sh'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node 'C:\\Users\\rafae\\OneDrive\\Documentos\\AGENTES_PESSOAIS\\noctua-orcamento\\.codex\\hooks\\gsd-context-monitor.js'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash 'C:\\Users\\rafae\\OneDrive\\Documentos\\AGENTES_PESSOAIS\\noctua-orcamento\\.codex\\hooks\\gsd-phase-boundary.sh'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node 'C:\\Users\\rafae\\OneDrive\\Documentos\\AGENTES_PESSOAIS\\noctua-orcamento\\.codex\\hooks\\gsd-check-update.js'"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash 'C:\\Users\\rafae\\OneDrive\\Documentos\\AGENTES_PESSOAIS\\noctua-orcamento\\.codex\\hooks\\gsd-session-state.sh'"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\\\Users\\\\rafae\\\\OneDrive\\\\Documentos\\\\AGENTES PESSOAIS\\\\noctua-orcamento\\\\.claude\\\\hooks\\\\precompact-session-digest.cjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\\\Users\\\\rafae\\\\OneDrive\\\\Documentos\\\\AGENTES PESSOAIS\\\\noctua-orcamento\\\\.claude\\\\hooks\\\\synapse-engine.cjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
